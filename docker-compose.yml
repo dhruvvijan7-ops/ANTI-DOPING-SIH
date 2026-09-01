@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cleansport-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clean_sport}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clean_sport}
+      POSTGRES_DB: ${POSTGRES_DB:-clean_sport}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clean_sport} -d ${POSTGRES_DB:-clean_sport}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: cleansport-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-clean_sport}:${POSTGRES_PASSWORD:-clean_sport}@postgres:5432/${POSTGRES_DB:-clean_sport}
+      CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173"]'
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-and-keep-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
+    container_name: cleansport-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+volumes:
+  postgres_data:

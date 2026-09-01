@@ -1,0 +1,62 @@
+"""ORM model registry. Import all models so Alembic autogenerate can see them."""
+from app.models.audit import AuditEvent
+from app.models.events import (
+    BiologicalObservation,
+    MedicalEvent,
+    SupplementEvent,
+    TestingEvent,
+    TravelEvent,
+    WhereaboutsEvent,
+)
+from app.models.identity import Permission, Role, User, role_permissions
+from app.models.intelligence import (
+    IntelligenceReport,
+    IntelligenceSource,
+    IntelligenceTag,
+    SourceAssessment,
+    report_tags,
+)
+from app.models.relationships import (
+    EntityRelationship,
+    RelationshipType,
+    SUBJECT_TYPES as RELATIONSHIP_SUBJECT_TYPES,
+)
+from app.models.scenarios import SyntheticScenario
+from app.models.subjects import (
+    Athlete,
+    Organization,
+    Provider,
+    Supplement,
+    SupportPerson,
+    SupportPersonAthleteLink,
+    Team,
+)
+
+__all__ = [
+    "Athlete",
+    "AuditEvent",
+    "BiologicalObservation",
+    "EntityRelationship",
+    "IntelligenceReport",
+    "IntelligenceSource",
+    "IntelligenceTag",
+    "MedicalEvent",
+    "Organization",
+    "Permission",
+    "Provider",
+    "RelationshipType",
+    "Role",
+    "SourceAssessment",
+    "SyntheticScenario",
+    "Supplement",
+    "SupplementEvent",
+    "SupportPerson",
+    "SupportPersonAthleteLink",
+    "Team",
+    "TestingEvent",
+    "TravelEvent",
+    "User",
+    "WhereaboutsEvent",
+    "report_tags",
+    "role_permissions",
+]
