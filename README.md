@@ -283,6 +283,5 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
-[MIT](LICENSE) © Dhruv Vijan. This prototype uses synthetic data only and is not an
-affiliated, endorsed or official product of WADA, NADA, ITA, or any anti-doping
-authority.
+[MIT](LICENSE). This prototype uses synthetic data only and is not an affiliated,
+endorsed or official product of WADA, NADA, ITA, or any anti-doping authority.
