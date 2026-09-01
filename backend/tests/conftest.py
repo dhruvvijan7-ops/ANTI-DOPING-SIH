@@ -15,9 +15,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 # Force a test database BEFORE importing app modules so settings/engine point at it.
+# Local dev Postgres is exposed on the host port 54320 (see .env POSTGRES_HOST_PORT);
+# CI overrides TEST_DATABASE_URL to target its own service container on 5432.
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+psycopg://clean_sport:clean_sport@localhost:5432/clean_sport_test",
+    "postgresql+psycopg://clean_sport:clean_sport@localhost:54320/clean_sport_test",
 )
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["DEPLOY_INITIAL_USERS"] = "true"

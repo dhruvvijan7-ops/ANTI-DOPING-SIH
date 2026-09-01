@@ -1,7 +1,7 @@
 """Authentication endpoints: login, logout, current user."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -40,7 +40,11 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         )
         db.commit()
         logger.info("Failed login attempt for %s", payload.username)
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     audit_service.record_audit(
         db,

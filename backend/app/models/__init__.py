@@ -1,4 +1,17 @@
 """ORM model registry. Import all models so Alembic autogenerate can see them."""
+from app.models.analytics import (
+    Alert,
+    AlertSignal,
+    AnalysisRun,
+    AnomalyResult,
+    CorrelationResult,
+    FeatureSnapshot,
+    FeatureVersion,
+    NetworkResult,
+    PriorityScore,
+    RuleResult,
+    RuleVersion,
+)
 from app.models.audit import AuditEvent
 from app.models.events import (
     BiologicalObservation,
@@ -33,7 +46,18 @@ from app.models.subjects import (
 )
 
 __all__ = [
+    "Alert",
+    "AlertSignal",
+    "AnalysisRun",
+    "AnomalyResult",
     "Athlete",
+    "CorrelationResult",
+    "FeatureSnapshot",
+    "FeatureVersion",
+    "NetworkResult",
+    "PriorityScore",
+    "RuleResult",
+    "RuleVersion",
     "AuditEvent",
     "BiologicalObservation",
     "EntityRelationship",

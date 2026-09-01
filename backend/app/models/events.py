@@ -21,9 +21,12 @@ from sqlalchemy import (
     Uuid,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
+
+# Forward reference used by the relationship() below.
+IntelligenceSource = "IntelligenceSource"
 
 
 def _uuid() -> uuid.UUID:
@@ -50,6 +53,8 @@ class TestingEvent(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    source: Mapped[IntelligenceSource | None] = relationship(lazy="selectin")
+
 
 class BiologicalObservation(Base):
     __tablename__ = "biological_observations"
@@ -69,6 +74,8 @@ class BiologicalObservation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    source: Mapped[IntelligenceSource | None] = relationship(lazy="selectin")
 
 
 class WhereaboutsEvent(Base):
@@ -111,6 +118,8 @@ class TravelEvent(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    source: Mapped[IntelligenceSource | None] = relationship(lazy="selectin")
+
 
 class MedicalEvent(Base):
     __tablename__ = "medical_events"
@@ -132,6 +141,8 @@ class MedicalEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    source: Mapped[IntelligenceSource | None] = relationship(lazy="selectin")
 
 
 class SupplementEvent(Base):
