@@ -156,11 +156,19 @@ def run_analysis(
                 )
 
         # --- stage 7: isolation forest ----------------------------------------
+        # Graph features are excluded: they are scored by the network stage, and
+        # feeding them into the forest distorts signal-deviation detection.
+        from app.analysis.features import GRAPH_FEATURE_IDS
+
         order = sorted(subjects, key=lambda s: str(s.subject_id))
         samples = [
             (
                 s.subject_id,
-                {fid: fv.value for fid, fv in features_by_subject[s.subject_id].items()},
+                {
+                    fid: fv.value
+                    for fid, fv in features_by_subject[s.subject_id].items()
+                    if fid not in GRAPH_FEATURE_IDS
+                },
             )
             for s in order
         ]

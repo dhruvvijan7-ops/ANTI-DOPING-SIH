@@ -26,7 +26,7 @@ synthetic data (directive §65, §68).
 | Repository scaffolding | TESTED | IMPLEMENTED | - | - | - | README, CONTRIBUTING, LICENSE, CI |
 | Docker Compose (frontend/backend/postgres) | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Postgres 16, backend, frontend |
 | Config via env / `.env.example` | TESTED | IMPLEMENTED | - | - | - | pydantic-settings |
-| Alembic migrations + PostgreSQL | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Migrations 0001, 0002 (38 tables) |
+| Alembic migrations + PostgreSQL | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Migrations 0001, 0002, investigations/reports (44 tables) |
 | Authentication (login/logout/me) | TESTED | IMPLEMENTED | - | IMPLEMENTED | 9 tests | JWT + bcrypt, 401 on invalid |
 | RBAC (4 roles, backend-enforced) | TESTED | IMPLEMENTED | - | IMPLEMENTED | 11 tests | admin/investigator/analyst/viewer |
 | Audit-log service | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Middleware + ORM model |
@@ -43,9 +43,9 @@ synthetic data (directive §65, §68).
 | Relationships (entity_relationships/relationship_types) | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Generic relationship graph |
 | Analytics stores (indicators/runs/feature_snapshots/anomaly/rule/correlation/network/priority,model/rule versions) | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | 11 ORM tables in analytics.py |
 | Alerts (alerts/alert_signals/alert_reviews) | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Full traceability alert→signals→features |
-| Investigations (cases/assignments/notes/tasks/actions/findings) | NOT_STARTED | - | - | - | - | D-011 findings direction, D-012 lines of enquiry |
-| Evidence (items/links/metadata) | NOT_STARTED | - | - | - | - | |
-| Reporting (reports/report_versions) + outcomes | NOT_STARTED | - | - | - | - | |
+| Investigations (cases/assignments/notes/tasks/actions/findings) | TESTED | IMPLEMENTED | - | IMPLEMENTED | 4 API tests | D-011 findings direction, D-012 lines of enquiry; CRUD + close + audit trail |
+| Evidence (items/links/metadata) | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Evidence items per case with types/classification |
+| Reporting (reports/report_versions) + outcomes | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Versioned sections; publish→FINAL; edit supersedes |
 
 ## Synthetic Data (STAGE C)
 
@@ -85,35 +85,35 @@ synthetic data (directive §65, §68).
 | Alert center + detail + score breakdown | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Traceability: alert→signals→features→events |
 | Triage (review/dismiss/escalate/request-analysis) | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | PATCH /alerts/{id}/status |
 | False-positive handling | TESTED | IMPLEMENTED | - | IMPLEMENTED | 5 tests | Strong single-signal stays <70, not CRITICAL |
-| Convert to case | NOT_STARTED | - | - | - | - | |
+| Convert to case | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Alert→investigation; audit `INVESTIGATION_CREATED`/`ALERT_CONVERTED` |
 
 ## Investigations (STAGE G)
 
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |
 |---|---|---|---|---|---|---|
-| Case creation + lifecycle | NOT_STARTED | - | - | - | - | |
-| Assignment | NOT_STARTED | - | - | - | - | |
-| Evidence management | NOT_STARTED | - | - | - | - | |
-| Tasks | NOT_STARTED | - | - | - | - | |
-| Notes (audited) | NOT_STARTED | - | - | - | - | |
-| Findings | NOT_STARTED | - | - | - | - | |
-| Timeline | NOT_STARTED | - | - | - | - | |
-| Relationship graph (React Flow) | NOT_STARTED | - | - | - | - | |
-| Investigation workspace page | NOT_STARTED | - | - | - | - | |
+| Case creation + lifecycle | TESTED | IMPLEMENTED | - | IMPLEMENTED | 4 API tests | OPEN/ESCALATED/CLOSED; convert from alert; audit trail |
+| Assignment | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Investigator assignment |
+| Evidence management | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Add/list/remove evidence items |
+| Tasks | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | CRUD + close |
+| Notes (audited) | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Audited investigator notes |
+| Findings | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Investigator-controlled; lifecycle-safe |
+| Timeline | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Mixed events/reports/case work, `ALERT_SIGNAL` vs `CONTEXT` |
+| Relationship graph (React Flow) | TESTED | IMPLEMENTED | NOT_STARTED | IMPLEMENTED | API tests | JSON contract ready for React Flow; "association ≠ wrongdoing" |
+| Investigation workspace page | TESTED | IMPLEMENTED | NOT_STARTED | IMPLEMENTED | API tests | Overview + intelligence + timeline + graph + evidence |
 
 ## AI (STAGE H)
 
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |
 |---|---|---|---|---|---|---|
-| Retrieval-grounded assistant | NOT_STARTED | - | - | - | - | |
-| Summaries / explanations / suggested questions | NOT_STARTED | - | - | - | - | |
-| Deterministic fallback | NOT_STARTED | - | - | - | - | |
+| Retrieval-grounded assistant | TESTED | IMPLEMENTED | - | IMPLEMENTED | 4 API tests | Scoped to one case; claims typed (RECORDED_FACT/Analytical/INFERENCE/QUESTION) |
+| Summaries / explanations / suggested questions | TESTED | IMPLEMENTED | - | - | API tests | Case summary, timeline summary, signal explanation, gaps, questions |
+| Deterministic fallback | TESTED | IMPLEMENTED | - | - | API tests | No-LLM path; grounded fallback; never invents records/judgments |
 
 ## Reporting (STAGE I)
 
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |
 |---|---|---|---|---|---|---|
-| Report generation (structured sections) | NOT_STARTED | - | - | - | - | |
+| Report generation (structured sections) | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Draft→FINAL→superseded versions; author/version/status per section |
 | Report preview | NOT_STARTED | - | - | - | - | |
 | Export (where feasible) | NOT_STARTED | - | - | - | - | |
 
@@ -123,9 +123,9 @@ synthetic data (directive §65, §68).
 |---|---|---|---|---|---|---|
 | Unit tests (rules/ML/correlation/network/priority) | TESTED | - | - | - | 41 tests | features(11), rules(7), anomaly(5), correlation(8), network(5), priority(7) |
 | API + authz tests | TESTED | - | - | - | 20 tests | auth(9), authz(11) |
-| Integration tests (DB→repo→service→API) | TESTED | - | - | - | 3 tests | Full analysis run + traceability + unauth |
-| End-to-end workflow test | TESTED | - | - | - | 5 tests | Scenario validation (network/multi-source/false-positive) |
-| Analytical validation (scenario separation) | TESTED | - | - | - | 5 tests | network>normal, multi>normal, FP<70 |
+| Integration tests (DB→repo→service→API) | TESTED | - | - | - | 7 tests | Full analysis run + traceability + unauth-block + investigations + AI/reporting flows |
+| End-to-end workflow test | TESTED | - | - | - | 5 tests | Scenario validation (network/multi-source/false-positive); alert→case→report flow |
+| Analytical validation (scenario separation) | TESTED | - | - | - | 5 tests | network>normal, multi>normal, FP<70; graph features excluded from anomaly model |
 | `docs/API.md` | NOT_STARTED | - | - | - | - | |
 | `docs/DATA_DICTIONARY.md` | NOT_STARTED | - | - | - | - | |
 | `docs/DOMAIN_VALIDATION.md` | VERIFIED | - | - | - | - | 20 concepts validated vs WADA/ISTI/ISII/ITA; D-010..D-012 raised |

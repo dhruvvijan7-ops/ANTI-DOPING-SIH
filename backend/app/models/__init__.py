@@ -29,11 +29,19 @@ from app.models.intelligence import (
     SourceAssessment,
     report_tags,
 )
+from app.models.investigations import (
+    EvidenceItem,
+    Finding,
+    Investigation,
+    InvestigationNote,
+    InvestigationTask,
+)
 from app.models.relationships import (
     EntityRelationship,
     RelationshipType,
     SUBJECT_TYPES as RELATIONSHIP_SUBJECT_TYPES,
 )
+from app.models.reports import InvestigationReport
 from app.models.scenarios import SyntheticScenario
 from app.models.subjects import (
     Athlete,
@@ -61,9 +69,15 @@ __all__ = [
     "AuditEvent",
     "BiologicalObservation",
     "EntityRelationship",
+    "EvidenceItem",
+    "Finding",
     "IntelligenceReport",
     "IntelligenceSource",
     "IntelligenceTag",
+    "Investigation",
+    "InvestigationNote",
+    "InvestigationReport",
+    "InvestigationTask",
     "MedicalEvent",
     "Organization",
     "Permission",

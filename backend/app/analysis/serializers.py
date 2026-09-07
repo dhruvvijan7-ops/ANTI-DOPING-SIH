@@ -118,6 +118,8 @@ def alert_summary(row) -> dict:
         "priority_level": row.priority_level,
         "title": row.title,
         "status": row.status,
+        "investigation_id": str(row.investigation_id) if row.investigation_id else None,
+        "triaged_at": _iso(row.triaged_at),
         "created_at": _iso(row.created_at),
     }
 

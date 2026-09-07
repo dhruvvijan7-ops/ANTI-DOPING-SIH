@@ -199,8 +199,8 @@ def test_unauthenticated_cannot_start_run(client):
     assert resp.status_code == 401
 
 
-def test_unauthenticated_can_read_runs(analyst_client, client):
+def test_unauthenticated_cannot_read_runs(analyst_client, client):
     resp = analyst_client.post("/api/v1/analysis/runs", json={})
     assert resp.status_code == 201
-    listing = client.get("/api/v1/analysis/runs").json()
-    assert listing["count"] >= 1
+    listing = client.get("/api/v1/analysis/runs")
+    assert listing.status_code == 401

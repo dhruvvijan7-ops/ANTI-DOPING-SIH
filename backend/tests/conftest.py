@@ -63,6 +63,24 @@ def db() -> Generator[Session, None, None]:
         session.close()
 
 
+@pytest.fixture(autouse=True)
+def _clean_domain_tables():
+    """Truncate domain/analytics/investigation tables before each test so tests are
+    isolated within the session-scoped schema (fixtures like seed_domain insert
+    unique rows: TEAM_MEMBER relationships, ATH-* external refs)."""
+    from sqlalchemy import text
+
+    with TestingSession() as session:
+        session.execute(
+            text(
+                "TRUNCATE analysis_runs, athletes, intelligence_sources, "
+                "relationship_types, synthetic_scenarios RESTART IDENTITY CASCADE"
+            )
+        )
+        session.commit()
+    yield
+
+
 @pytest.fixture()
 def client() -> Generator[TestClient, None, None]:
     from app.main import app
@@ -72,31 +90,40 @@ def client() -> Generator[TestClient, None, None]:
 
 
 @pytest.fixture()
-def admin_client(client: TestClient) -> TestClient:
-    return _authed_client(client, "admin", os.environ.get("INITIAL_ADMIN_PASSWORD", "ChangeMeAdmin123!"))
+def admin_client() -> TestClient:
+    return _authed_client("admin", os.environ.get("INITIAL_ADMIN_PASSWORD", "ChangeMeAdmin123!"))
 
 
 @pytest.fixture()
-def investigator_client(client: TestClient) -> TestClient:
-    return _authed_client(client, "investigator", "investigator-Passw0rd!")
+def investigator_client() -> TestClient:
+    return _authed_client("investigator", "investigator-Passw0rd!")
 
 
 @pytest.fixture()
-def analyst_client(client: TestClient) -> TestClient:
-    return _authed_client(client, "analyst", "analyst-Passw0rd!")
+def analyst_client() -> TestClient:
+    return _authed_client("analyst", "analyst-Passw0rd!")
 
 
 @pytest.fixture()
-def viewer_client(client: TestClient) -> TestClient:
-    return _authed_client(client, "viewer", "viewer-Passw0rd!")
+def viewer_client() -> TestClient:
+    return _authed_client("viewer", "viewer-Passw0rd!")
 
 
-def _authed_client(client: TestClient, username: str, password: str) -> TestClient:
-    resp = client.post(
+def _authed_client(username: str, password: str) -> TestClient:
+    """Authenticated TestClient with its OWN headers.
+
+    Each fixture needs a separate TestClient instance: mutating the shared
+    `client.headers` clobbered earlier tokens when several authed fixtures were
+    used in one test (e.g. viewer overwriting analyst).
+    """
+    from app.main import app
+
+    c = TestClient(app)
+    resp = c.post(
         "/api/v1/auth/login",
         json={"username": username, "password": password},
     )
     assert resp.status_code == 200, f"login failed for {username}: {resp.text}"
     token = resp.json()["access_token"]
-    client.headers.update({"Authorization": f"Bearer {token}"})
-    return client
+    c.headers.update({"Authorization": f"Bearer {token}"})
+    return c

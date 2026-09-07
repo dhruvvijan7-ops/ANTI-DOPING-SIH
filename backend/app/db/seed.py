@@ -66,6 +66,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         Permissions.EVIDENCE_MODIFY,
         Permissions.REPORTS_GENERATE,
         Permissions.REPORTS_READ,
+        Permissions.AUDIT_READ,
         Permissions.RESOURCES_READ,
     ],
     Roles.INTELLIGENCE_ANALYST: [

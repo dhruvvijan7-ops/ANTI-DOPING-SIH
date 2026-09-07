@@ -24,6 +24,20 @@ FEATURE_VERSION = 2
 _BURST_GAP_DAYS = 7  # signals separated by <= this gap belong to one temporal burst
 _HIGH_DEVIATION = 2.5  # |baseline_deviation| at/above this counts as a strong deviation
 
+# Relationship-graph features. They are scored by the dedicated network stage
+# (priority weight 0.10), so they are EXCLUDED from the Isolation Forest anomaly
+# matrix: the forest measures deviation in signal patterns only, and mixing graph
+# structure into it lets a densely-connected subject read as "most normal".
+GRAPH_FEATURE_IDS = frozenset(
+    {
+        "relationship_degree",
+        "connected_entity_count",
+        "relationship_diversity",
+        "weighted_degree",
+        "connected_alert_count",
+    }
+)
+
 
 def _recent(signals: list[Signal], as_of: date, days: int) -> list[Signal]:
     lo = as_of - timedelta(days=days)

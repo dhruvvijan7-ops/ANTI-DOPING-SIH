@@ -31,6 +31,50 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `get_current_user` token injection: `Depends(oauth2_scheme)` was missing.
   - `InvalidCredentialsError` now returns HTTP 401 instead of 500.
 
+## Unreleased (STAGE F/G/H/I)
+
+### Added
+- Alert triage (STAGE F): audited review/dismiss/escalate/false-positive endpoints and
+  alert→case conversion (`POST /api/v1/alerts/{id}/convert`) that creates an
+  investigation, preserves the originating alert context, and records `INVESTIGATION_CREATED`
+  + `ALERT_CONVERTED` audit events. Triage metadata (`triaged_at`, `triage_meta_json`,
+  `investigation_id`) added to `alerts`.
+- Investigation workspace (STAGE G):
+  - Models + migration `0002_investigations_reports` (investigations, evidence_items,
+    investigation_tasks, investigation_notes, investigation_findings, investigation_reports)
+    with PRIORITY/STATUS check constraints.
+  - Case CRUD + close, overview (counts, originating alert, subject label), intelligence
+    reference, mixed timeline (events/reports/case work) with `ALERT_SIGNAL` vs `CONTEXT`
+    relevance, evidence/tasks/notes/findings management, case audit trail, and the
+    relationshipl graph JSON contract for the React Flow visualizer ("association does
+    not imply wrongdoing").
+- Controlled AI decision support (STAGE H):
+  - `AIService` abstraction with `LLMAIService` (OpenAI-compatible) and
+    `DeterministicFallbackAIService`; app never depends on a vendor (selected via env).
+  - Retrieval scoped to one case (`app/ai/retrieval.py`); output grounded, otherwise the
+    exact phrase *"The available case records do not establish this."*; no guilt/sanction/
+    invented-evidence conclusions; claims typed as RECORDED_FACT / ANALYTICAL_SIGNAL /
+    INFERENCE / INVESTIGATIVE_QUESTION.
+  - Operations: case summary, timeline summary, signal explanation, information gaps,
+    investigation questions, report draft (`POST /investigations/{id}/ai/...`).
+- Versioned reporting (STAGE I): report creation as v1 DRAFT, publish→FINAL, editing a
+  FINAL report creates the next version and supersedes the old one; sections (metadata,
+  purpose, intelligence, signals, timeline, relationships, evidence, findings, unresolved
+  questions, outcome, audit metadata); author/created/version/status recorded per version.
+- RBAC: INVESTIGATOR role granted `AUDIT_READ` (case audit trail access).
+- Tests: `test_investigations_api.py` (4), `test_ai_reporting.py` (4), shared
+  `tests/support_domain.py`; SQLAlchemy-side seeding isolated per test via autouse
+  truncation; per-user `TestClient` fixtures.
+- Bug fixes:
+  - Test fixtures shared one `TestClient`, so multi-role tests silently leaked tokens
+    (e.g. `viewer_client` overwrote `analyst_client`); each authed fixture now owns its
+    client → latent `test_unauthenticated_can_read_runs` false-green corrected to
+    `test_unauthenticated_cannot_read_runs` (401).
+  - Anomaly Isolation Forest excluded relationship-graph features (scored separately by
+    the dedicated network stage); previously a densely-connected subject read as "most
+    normal" and the network scenario failed to outrank normal subjects
+    (`test_network_scenario_outranks_normal`, deterministic 20.02 vs 21.47 failure).
+
 ## 0.1.0 — 2026-09-01
 
 ### Added

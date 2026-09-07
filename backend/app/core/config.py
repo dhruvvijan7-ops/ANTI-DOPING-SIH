@@ -50,6 +50,17 @@ class Settings(BaseSettings):
         default="ChangeMeAdmin123!", alias="INITIAL_ADMIN_PASSWORD"
     )
 
+    # AI decision support (STAGE H). When unset the deterministic fallback is used
+    # so the UI continues to function without an external model provider.
+    ai_provider: str = Field(default="", alias="LLM_PROVIDER")
+    ai_api_key: str = Field(default="", alias="LLM_API_KEY")
+    ai_model: str = Field(default="", alias="LLM_MODEL")
+    ai_base_url: str = Field(default="", alias="LLM_BASE_URL")
+
+    @property
+    def ai_configured(self) -> bool:
+        return bool(self.ai_provider and self.ai_api_key and self.ai_base_url and self.ai_model)
+
     @property
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}

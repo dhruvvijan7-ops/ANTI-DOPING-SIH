@@ -58,7 +58,20 @@ def pipeline_population(subjects: list) -> dict[uuid.UUID, PriorityOutcome]:
     rule_scores = {
         s.subject_id: evaluate_rules(s, features[s.subject_id], CFG, AS_OF)[1] for s in subjects
     }
-    samples = [(s.subject_id, {k: v.value for k, v in features[s.subject_id].items()}) for s in subjects]
+    samples = [
+        (
+            s.subject_id,
+            {k: v.value for k, v in features[s.subject_id].items()},
+        )
+        for s in subjects
+    ]
+    # Match the runner: the anomaly matrix excludes graph features (network stage).
+    from app.analysis.features import GRAPH_FEATURE_IDS
+
+    samples = [
+        (sid, {k: v for k, v in feats.items() if k not in GRAPH_FEATURE_IDS})
+        for sid, feats in samples
+    ]
     anomaly_outcomes = {o.subject_id: o for o in detect_anomalies(samples, CFG)[0]}
     temporal = {s.subject_id: temporal_correlation(s, CFG, AS_OF) for s in subjects}
     cross = {s.subject_id: cross_source_correlation(s, CFG, AS_OF) for s in subjects}
