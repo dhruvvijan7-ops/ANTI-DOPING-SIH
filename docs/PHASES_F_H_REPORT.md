@@ -275,8 +275,9 @@ Actual commands and results:
 - **Backend telemetry branding:** `/api/v1/health` still reports `"app":"CleanSport
   Intelligence API"` and JWT issuer/audience are `clean-sport-*`. The frontend never
   renders these; changing backend branding strings is out of scope for Phase F–H.
-- **Default admin password:** `INITIAL_ADMIN_PASSWORD=ChangeMeAdmin123!` in `.env` is the
-  documented development default and must be rotated in any real deployment.
+- **Default admin password:** `INITIAL_ADMIN_PASSWORD` must be set to a unique strong value;
+  the legacy published default is explicitly denied in production and has been removed from
+  templates, code defaults and documentation.
 - **Playwright E2E is a single critical journey** (1 spec) — module-by-module flows are
   covered only by the unit/component layer and by manual verification.
 - **INP not measured** (see §7) — requires real-user field instrumentation.

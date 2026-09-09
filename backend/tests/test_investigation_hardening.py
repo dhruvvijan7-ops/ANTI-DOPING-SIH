@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings
+from app.core.config import Settings, _LEGACY_DEFAULT_ADMIN_PASSWORD
 from app.investigations.evidence_integrity import content_hash
 from app.models.audit import AuditEvent
 from app.models.identity import User
@@ -370,7 +370,7 @@ def test_production_config_guard(monkeypatch):
 
     # good secret but default admin password -> refuse
     monkeypatch.setenv("JWT_SECRET_KEY", "x" * 64)
-    monkeypatch.setenv("INITIAL_ADMIN_PASSWORD", "ChangeMeAdmin123!")
+    monkeypatch.setenv("INITIAL_ADMIN_PASSWORD", _LEGACY_DEFAULT_ADMIN_PASSWORD)
     with pytest.raises(RuntimeError, match="INITIAL_ADMIN_PASSWORD"):
         Settings().validate_production()
 
@@ -382,5 +382,5 @@ def test_production_config_guard(monkeypatch):
     # dev env accepts dev defaults
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("JWT_SECRET_KEY", "change-me-dev-only")
-    monkeypatch.setenv("INITIAL_ADMIN_PASSWORD", "ChangeMeAdmin123!")
+    monkeypatch.setenv("INITIAL_ADMIN_PASSWORD", _LEGACY_DEFAULT_ADMIN_PASSWORD)
     Settings().validate_production()

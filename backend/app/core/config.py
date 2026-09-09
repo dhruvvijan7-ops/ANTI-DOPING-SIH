@@ -13,6 +13,12 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_DEV_ONLY_SECRETS = frozenset({"change-me-dev-only", "change_me", ""})
+_DEV_JWT_SECRETS = _DEV_ONLY_SECRETS | {"change-me-in-production-and-keep-secret"}
+_LEGACY_DEFAULT_ADMIN_PASSWORD = "ChangeMeAdmin123!"
+_DEV_ADMIN_PASSWORDS = _DEV_ONLY_SECRETS | {_LEGACY_DEFAULT_ADMIN_PASSWORD}
+
+
 class Settings(BaseSettings):
     """Central application configuration."""
 
@@ -49,9 +55,7 @@ class Settings(BaseSettings):
 
     # Seed
     deploy_initial_users: bool = Field(default=True, alias="DEPLOY_INITIAL_USERS")
-    initial_admin_password: str = Field(
-        default="ChangeMeAdmin123!", alias="INITIAL_ADMIN_PASSWORD"
-    )
+    initial_admin_password: str = Field(default="", alias="INITIAL_ADMIN_PASSWORD")
 
     # AI decision support (STAGE H). When unset the deterministic fallback is used
     # so the UI continues to function without an external model provider.
@@ -68,8 +72,6 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}
 
-    _DEV_ONLY_SECRETS = frozenset({"change-me-dev-only", "change_me", ""})
-
     def validate_production(self) -> None:
         """Fail fast when production settings still use known dev defaults.
 
@@ -79,16 +81,16 @@ class Settings(BaseSettings):
         """
         if not self.is_production:
             return
-        if self.jwt_secret_key in self._DEV_ONLY_SECRETS or len(self.jwt_secret_key) < 32:
+        if self.jwt_secret_key in _DEV_JWT_SECRETS or len(self.jwt_secret_key) < 32:
             raise RuntimeError(
-                "Refusing to start in production: JWT_SECRET_KEY is missing or uses a known "
-                "development default. Generate a strong secret (>= 32 chars) and set "
+                "Refusing to start in production: JWT_SECRET_KEY is missing, uses a known "
+                "default, or is too short. Generate a strong secret (>= 32 chars) and set "
                 "JWT_SECRET_KEY before starting."
             )
-        if self.initial_admin_password == "ChangeMeAdmin123!":
+        if self.initial_admin_password in _DEV_ADMIN_PASSWORDS:
             raise RuntimeError(
-                "Refusing to start in production: INITIAL_ADMIN_PASSWORD still uses the "
-                "documented default value. Set a unique strong password before starting."
+                "Refusing to start in production: INITIAL_ADMIN_PASSWORD is unset or uses a "
+                "known default value. Set a unique strong password before starting."
             )
 
     @property

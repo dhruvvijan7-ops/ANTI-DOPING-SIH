@@ -23,6 +23,8 @@ TEST_DATABASE_URL = os.environ.get(
 )
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["DEPLOY_INITIAL_USERS"] = "true"
+TEST_ADMIN_PASSWORD = "Str0ng-Test-Passw0rd-2026!"
+os.environ["INITIAL_ADMIN_PASSWORD"] = TEST_ADMIN_PASSWORD
 
 # Build a module-level engine bound to the test URL.
 engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
@@ -91,7 +93,7 @@ def client() -> Generator[TestClient, None, None]:
 
 @pytest.fixture()
 def admin_client() -> TestClient:
-    return _authed_client("admin", os.environ.get("INITIAL_ADMIN_PASSWORD", "ChangeMeAdmin123!"))
+    return _authed_client("admin", os.environ.get("INITIAL_ADMIN_PASSWORD", TEST_ADMIN_PASSWORD))
 
 
 @pytest.fixture()

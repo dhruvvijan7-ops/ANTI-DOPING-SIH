@@ -152,6 +152,10 @@ def seed_users(db: Session) -> None:
         role = db.scalar(select(Role).where(Role.name == item["role"]))
         password = DEFAULT_PASSWORDS.get(item["username"], f"{item['username']}-Passw0rd!")
         if item["username"] == "admin":
+            if not settings.initial_admin_password:
+                raise RuntimeError(
+                    "INITIAL_ADMIN_PASSWORD must be set when DEPLOY_INITIAL_USERS is enabled"
+                )
             password = settings.initial_admin_password
         user = User(
             username=item["username"],

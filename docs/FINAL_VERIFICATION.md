@@ -241,8 +241,8 @@ influences grants.
   implemented.
 - **LOW — token lifetime 24h** (`ACCESS_TOKEN_EXPIRE_MINUTES=1440`) by default;
   refresh/rotation unsupported.
-- **LOW — `initial_admin_password` default `ChangeMeAdmin123!`** is documented for
-  dev seed; now fails loudly under `APP_ENV=production`.
+- **LOW — `initial_admin_password` legacy published default** is explicitly denied; the
+  value has no default and must be provided; fails loudly under `APP_ENV=production`.
 - **Dead permission key:** `INVESTIGATIONS_ASSIGN` is defined but never enforced by
   any endpoint (assignment happens at create/convert and task-scope only).
 - `.gitignore` correctly excludes `.env`; only `.env.example` is tracked — confirmed
