@@ -19,6 +19,27 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = Field(default=None, max_length=255)
+    password: str = Field(min_length=8, max_length=256)
+
+
+class ForgotPasswordRequest(BaseModel):
+    identifier: str = Field(min_length=1, max_length=255)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+    dev_reset_token: Optional[str] = None
+
+
 class PermissionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

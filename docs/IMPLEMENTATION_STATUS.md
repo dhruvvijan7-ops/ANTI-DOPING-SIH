@@ -24,13 +24,13 @@ synthetic data (directive §65, §68).
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |
 |---|---|---|---|---|---|---|
 | Repository scaffolding | TESTED | IMPLEMENTED | - | - | - | README, CONTRIBUTING, LICENSE, CI |
-| Docker Compose (frontend/backend/postgres) | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Postgres 16, backend, frontend |
+| Docker Compose (frontend/backend/postgres) | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | - | Postgres 16; services `verity-postgres`/`verity-backend`/`verity-frontend`; nginx `/api` proxy + SPA fallback; same-origin login verified on :8080 |
 | Config via env / `.env.example` | TESTED | IMPLEMENTED | - | - | - | pydantic-settings |
-| Alembic migrations + PostgreSQL | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Migrations 0001, 0002, investigations/reports (44 tables) |
+| Alembic migrations + PostgreSQL | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Migrations 0001, 0002, 0003 (evidence integrity/assignment) |
 | Authentication (login/logout/me) | TESTED | IMPLEMENTED | - | IMPLEMENTED | 9 tests | JWT + bcrypt, 401 on invalid |
 | RBAC (4 roles, backend-enforced) | TESTED | IMPLEMENTED | - | IMPLEMENTED | 11 tests | admin/investigator/analyst/viewer |
 | Audit-log service | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | Middleware + ORM model |
-| React app shell + routing + protected routes | NOT_STARTED | - | - | - | - | |
+| React app shell + routing + protected routes | VERIFIED | IMPLEMENTED | IMPLEMENTED | - | 42 frontend tests | `React.lazy` route split, `RequireAuth`, RBAC-filtered nav, skip link |
 
 ## Domain Model (STAGE B)
 
@@ -51,9 +51,12 @@ synthetic data (directive §65, §68).
 
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |
 |---|---|---|---|---|---|---|
-| Deterministic generator (500 athletes, events, reports, relationships) | NOT_STARTED | - | - | - | - | |
-| 9 known scenarios (Normal..Unreliable source) | NOT_STARTED | - | - | - | - | |
-| `seed-data` / `reset-data` operations | NOT_STARTED | - | - | - | - | |
+| Deterministic generator (14 athletes, events, reports, relationships) | TESTED | IMPLEMENTED | - | IMPLEMENTED | runtime | `app/data/generators.py`, per-key PRNG; same seed+as_of reproduces exactly |
+| Scenario registry (7 known scenarios, normal..false positive) | TESTED | IMPLEMENTED | - | IMPLEMENTED | runtime | `app/data/registry.py`, stable refs + ground-truth labels |
+| `populate` / `reset` / `list` operations | TESTED | IMPLEMENTED | - | IMPLEMENTED | runtime | `app/data/populate.py` + `app/data/cli.py`; scoped `TRUNCATE ... CASCADE` |
+| Full pipeline execution per scenario | TESTED | IMPLEMENTED | - | IMPLEMENTED | runtime | Feed real `run_analysis`; signals validated per scenario |
+| Biological deviation propagation | TESTED | IMPLEMENTED | - | IMPLEMENTED | - | repository `value_attr`; `RULES-005` fires for DB-persisted subjects |
+| Docs | IMPLEMENTED | - | - | - | - | `docs/SYNTHETIC_DATA.md` |
 
 ## Intelligence (STAGE D)
 
@@ -82,40 +85,50 @@ synthetic data (directive §65, §68).
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |
 |---|---|---|---|---|---|---|
 | Alert generation (thresholds/correlation/rule/network) | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Triggered when priority >= threshold |
-| Alert center + detail + score breakdown | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Traceability: alert→signals→features→events |
-| Triage (review/dismiss/escalate/request-analysis) | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | PATCH /alerts/{id}/status |
-| False-positive handling | TESTED | IMPLEMENTED | - | IMPLEMENTED | 5 tests | Strong single-signal stays <70, not CRITICAL |
-| Convert to case | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Alert→investigation; audit `INVESTIGATION_CREATED`/`ALERT_CONVERTED` |
+| Alert center + detail + score breakdown | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests | Alerts list (filterable) + detail with "why flagged" score decomposition |
+| Triage (review/dismiss/escalate/request-analysis) | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests | `PATCH /alerts/{id}/status` + TriagePanel (review/dismiss/false-positive/escalate) |
+| False-positive handling | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | 5 tests | Strong single-signal stays <70, not CRITICAL |
+| Convert to case | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests | Alert→investigation with priority + note; audit `INVESTIGATION_CREATED`/`ALERT_CONVERTED` |
 
 ## Investigations (STAGE G)
 
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |
 |---|---|---|---|---|---|---|
-| Case creation + lifecycle | TESTED | IMPLEMENTED | - | IMPLEMENTED | 4 API tests | OPEN/ESCALATED/CLOSED; convert from alert; audit trail |
-| Assignment | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Investigator assignment |
-| Evidence management | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Add/list/remove evidence items |
-| Tasks | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | CRUD + close |
-| Notes (audited) | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Audited investigator notes |
-| Findings | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Investigator-controlled; lifecycle-safe |
-| Timeline | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Mixed events/reports/case work, `ALERT_SIGNAL` vs `CONTEXT` |
-| Relationship graph (React Flow) | TESTED | IMPLEMENTED | NOT_STARTED | IMPLEMENTED | API tests | JSON contract ready for React Flow; "association ≠ wrongdoing" |
-| Investigation workspace page | TESTED | IMPLEMENTED | NOT_STARTED | IMPLEMENTED | API tests | Overview + intelligence + timeline + graph + evidence |
+| Case creation + lifecycle | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | 4 API tests | OPEN/ESCALATED/CLOSED; convert from alert; list + create + workspace lifecycle; audit trail |
+| Assignment | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | 8 hardening tests | Assign/unassign dialog `POST /investigations/{id}/assign` gated by `INVESTIGATIONS_ASSIGN`; audit; `assigned_to` list filter |
+| Evidence management | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | 8 hardening tests | Sensitivity ACL, SHA-256 integrity (canonical `clean-sport-evidence-v1`), append-only version history, controlled soft delete; tab: add/edit/versions/integrity |
+| Tasks | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests | CRUD + close; `assigned_to_name` resolved on task rows |
+| Notes (audited) | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests | Audited investigator notes |
+| Findings | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | 8 hardening tests | Investigator-controlled; FK evidence links with validity; cross-case links rejected |
+| Timeline | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests | Mixed events/reports/case work, `ALERT_SIGNAL` vs `CONTEXT` |
+| Relationship graph | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests | Custom SVG layout (no React Flow dependency) honoring the JSON contract; "association ≠ wrongdoing" |
+| Investigation workspace page | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests | 11 tabs: overview + intelligence + timeline + graph + evidence + … + report/ai/audit |
 
 ## AI (STAGE H)
 
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |
 |---|---|---|---|---|---|---|
-| Retrieval-grounded assistant | TESTED | IMPLEMENTED | - | IMPLEMENTED | 4 API tests | Scoped to one case; claims typed (RECORDED_FACT/Analytical/INFERENCE/QUESTION) |
-| Summaries / explanations / suggested questions | TESTED | IMPLEMENTED | - | - | API tests | Case summary, timeline summary, signal explanation, gaps, questions |
-| Deterministic fallback | TESTED | IMPLEMENTED | - | - | API tests | No-LLM path; grounded fallback; never invents records/judgments |
+| Retrieval-grounded assistant | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | 4 API tests | Workspace AI tab; scoped to one case; claims typed (RECORDED_FACT/Analytical/INFERENCE/QUESTION), sources deterministic |
+| Summaries / explanations / suggested questions | VERIFIED | IMPLEMENTED | IMPLEMENTED | - | API tests | Case summary, timeline summary, signal explanation, gaps, questions; global AI assistant page |
+| Deterministic fallback | VERIFIED | IMPLEMENTED | IMPLEMENTED | - | API tests | No-LLM path; grounded fallback; never invents records/judgments |
 
 ## Reporting (STAGE I)
 
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |
 |---|---|---|---|---|---|---|
-| Report generation (structured sections) | TESTED | IMPLEMENTED | - | IMPLEMENTED | API tests | Draft→FINAL→superseded versions; author/version/status per section |
-| Report preview | NOT_STARTED | - | - | - | - | |
+| Report generation (structured sections) | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests | Draft→FINAL→superseded versions; author/version/status per section; workspace Reports tab + publish |
+| Report preview | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | - | - | Iterative preview in workspace (DRAFT/edit → publish); standalone print/export pending |
 | Export (where feasible) | NOT_STARTED | - | - | - | - | |
+
+## Landing Page & Authentication (update)
+
+| Feature | Status | Backend | Frontend | Database | Tests | Notes |
+|---|---|---|---|---|---|---|
+| Cinematic landing intro (VERITY wordmark → zoom through I-dot → landing) | VERIFIED | - | IMPLEMENTED | - | Vitest + 2 Playwright | 1.76s CSS-transform path (measured dot, viewport-correct), ~240ms reduced-motion, once per session, skipped on hash/deep-link/back-forward, `pointer-events-none` + `aria-hidden` |
+| Scroll reveals + focused nav (smooth scroll, hash, mobile close, emphasis) | VERIFIED | - | IMPLEMENTED | - | Vitest + Playwright | `Reveal` IntersectionObserver; `id="how-it-works"` navigation renamed; reduced-motion honored |
+| Self-service account creation | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | +11 backend, Playwright | `POST /auth/register` → VIEWER; auto sign-in; 409 dup username/email; username regex |
+| Password reset (request + redeem) | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | +12 backend, Playwright | `forgot-password` neutral/anti-enum + hashed single-use 30-min tokens (migration 0004); `reset-password` one-time redeem; dev-only `dev_reset_token` echo |
+| Auth pages (Login/Signup/Forgot/Reset + AuthShell transitions) | VERIFIED | - | IMPLEMENTED | - | Vitest + Playwright | `?reset=1` banner; lazy routes `/signup`, `/forgot-password`, `/reset-password` |
 
 ## QA & Docs (STAGE J)
 
@@ -124,14 +137,18 @@ synthetic data (directive §65, §68).
 | Unit tests (rules/ML/correlation/network/priority) | TESTED | - | - | - | 41 tests | features(11), rules(7), anomaly(5), correlation(8), network(5), priority(7) |
 | API + authz tests | TESTED | - | - | - | 20 tests | auth(9), authz(11) |
 | Integration tests (DB→repo→service→API) | TESTED | - | - | - | 7 tests | Full analysis run + traceability + unauth-block + investigations + AI/reporting flows |
+| Investigation hardening tests (assignment/integrity/links/guard) | VERIFIED | - | - | - | 8 tests | `test_investigation_hardening.py`; full suite 144 passed (post auth-update) |
 | End-to-end workflow test | TESTED | - | - | - | 5 tests | Scenario validation (network/multi-source/false-positive); alert→case→report flow |
 | Analytical validation (scenario separation) | TESTED | - | - | - | 5 tests | network>normal, multi>normal, FP<70; graph features excluded from anomaly model |
+| Frontend unit/component tests (Vitest + RTL) | TESTED | - | - | - | 43 tests | utils, nav, auth store, api client, TriagePanel, Landing (intro/reveal/ids) |
+| Frontend E2E critical journey (Playwright) | VERIFIED | - | - | - | 2 specs | landing intro (3 variants) + journey + signup→forgot→reset→login (5 pass) |
+| Frontend typecheck / lint / build | VERIFIED | - | - | - | - | `tsc -b` clean; ESLint 0 errors; `vite build` 1677 modules |
 | `docs/API.md` | NOT_STARTED | - | - | - | - | |
 | `docs/DATA_DICTIONARY.md` | NOT_STARTED | - | - | - | - | |
 | `docs/DOMAIN_VALIDATION.md` | VERIFIED | - | - | - | - | 20 concepts validated vs WADA/ISTI/ISII/ITA; D-010..D-012 raised |
-| Dashboard metrics from backend | NOT_STARTED | - | - | - | - | |
-| Error/empty/loading states everywhere | NOT_STARTED | - | - | - | - | |
-| Demo workflow (directive §66) verified | NOT_STARTED | - | - | - | - | |
+| Dashboard metrics from backend | VERIFIED | IMPLEMENTED | IMPLEMENTED | - | - | `GET /dashboard` aggregates; cards + quick links |
+| Error/empty/loading states everywhere | VERIFIED | IMPLEMENTED | IMPLEMENTED | - | - | `states.tsx` (PageLoading/Spinner/Skeleton/SkeletonRows) + ErrorBoundary + toast feedback |
+| Demo workflow (directive §66) verified | VERIFIED | IMPLEMENTED | IMPLEMENTED | - | - | Manual end-to-end on seeded data + automated E2E journey |
 
 ---
 

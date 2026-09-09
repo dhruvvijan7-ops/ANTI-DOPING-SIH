@@ -43,13 +43,15 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    settings.validate_production()
+    docs_enabled = not settings.is_production
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         lifespan=lifespan,
-        openapi_url=f"{settings.api_v1_prefix}/openapi.json",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        openapi_url=f"{settings.api_v1_prefix}/openapi.json" if docs_enabled else None,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
     )
 
     app.add_middleware(

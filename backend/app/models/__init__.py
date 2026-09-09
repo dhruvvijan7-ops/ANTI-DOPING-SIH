@@ -31,7 +31,9 @@ from app.models.intelligence import (
 )
 from app.models.investigations import (
     EvidenceItem,
+    EvidenceVersion,
     Finding,
+    FindingEvidenceLink,
     Investigation,
     InvestigationNote,
     InvestigationTask,
@@ -70,7 +72,9 @@ __all__ = [
     "BiologicalObservation",
     "EntityRelationship",
     "EvidenceItem",
+    "EvidenceVersion",
     "Finding",
+    "FindingEvidenceLink",
     "IntelligenceReport",
     "IntelligenceSource",
     "IntelligenceTag",

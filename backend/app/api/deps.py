@@ -49,11 +49,11 @@ def get_current_user(
         raise _credentials_exception()
 
     try:
-        subject = decode_access_token(token)
-    except TokenError:
+        subject = uuid.UUID(decode_access_token(token))
+    except (TokenError, ValueError):
         raise _credentials_exception()
 
-    user = db.get(User, uuid.UUID(subject))
+    user = db.get(User, subject)
     if user is None:
         raise _credentials_exception()
     if not user.is_active or user.status != "ACTIVE":

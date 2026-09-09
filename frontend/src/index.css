@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial,
+    sans-serif;
+  --font-serif: Georgia, "Times New Roman", Times, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: theme("colors.paper.50");
+    color: theme("colors.ink.950");
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: theme("colors.signal.200");
+    color: theme("colors.ink.950");
+  }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.signal.600");
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .font-serif {
+    font-family: var(--font-serif);
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+@keyframes auth-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-enter {
+  animation: auth-enter 260ms ease-out both;
+}
+
+/* VERITY intro — progressive "writing" reveal. The wordmark is progressively
+   revealed left→right via a clip-path sweep. The dot of the I is drawn last
+   (its own pop-in starts just as the sweep reaches it). */
+@keyframes intro-write {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.intro-write {
+  clip-path: inset(0 100% 0 0);
+  animation: intro-write 1420ms cubic-bezier(0.5, 0, 0.28, 1) forwards;
+}
+
+/* The hollow I-dot is "dotted" as the pen stroke reaches it. Transparent
+   center; the signal accent only outlines it. */
+@keyframes intro-dot-in {
+  from {
+    transform: translateX(-50%) scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
+.intro-dot-in {
+  animation: intro-dot-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1) 1150ms both;
+}
+
+/* Reduced-motion path: plain appear (no sweep, no zoom). */
+@keyframes intro-reduced-word {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.intro-reduced-word {
+  animation: intro-reduced-word 300ms ease-out both;
+}
+
+/* The paper background dissolves as the camera passes through the I-dot. */
+@keyframes intro-bg-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.intro-bg-fade {
+  animation-name: intro-bg-fade;
+  animation-fill-mode: forwards;
+  animation-timing-function: ease-out;
+}
+
+/* The landing page grows out of the hollow dot and fills the viewport. The
+   transform origin is set inline to the measured center of the I-dot. */
+@keyframes intro-landing-reveal {
+  from {
+    transform: scale(0.014);
+  }
+  to {
+    transform: scale(1);
+  }
+}

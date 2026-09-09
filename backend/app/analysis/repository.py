@@ -69,6 +69,7 @@ def _event_signals(
     model,
     category: str,
     date_attr: str,
+    value_attr: str | None = None,
     **ref_fields: str,
 ) -> list[tuple[uuid.UUID, Signal]]:
     rows = db.scalars(
@@ -81,6 +82,10 @@ def _event_signals(
             continue
         source = getattr(row, "source", None)
         source_category = (source.source_type if source else None) or "UNKNOWN"
+        # For biological observations the numeric value is the baseline deviation,
+        # which several features/rules read via Signal.value (matching the in-memory
+        # contract). Other event kinds leave value unset (None).
+        value = getattr(row, value_attr, None) if value_attr else None
         out.append(
             (
                 row.athlete_id,
@@ -91,6 +96,7 @@ def _event_signals(
                     source_id=getattr(row, "source_id", None),
                     source_category=source_category,
                     weight=1.0,
+                    value=value,
                     raw_model=model.__tablename__,
                     raw_ref={k: getattr(row, v, None) for k, v in ref_fields.items()},
                 ),
@@ -150,7 +156,7 @@ def load_subjects(db: Session, subject_ids: list[uuid.UUID] | None = None) -> li
             signal_map.setdefault(subject_id, []).append(sig)
 
     add(_event_signals(db, ids, TestingEvent, "TESTING", "test_date", type="test_type", classification="result_classification"))
-    add(_event_signals(db, ids, BiologicalObservation, "BIOLOGICAL", "observation_date", marker="marker", unit="unit"))
+    add(_event_signals(db, ids, BiologicalObservation, "BIOLOGICAL", "observation_date", value_attr="baseline_deviation", marker="marker", unit="unit"))
     add(_event_signals(db, ids, WhereaboutsEvent, "WHEREABOUTS", "event_date", status="status"))
     add(_event_signals(db, ids, TravelEvent, "TRAVEL", "event_date", destination="destination"))
     add(_event_signals(db, ids, MedicalEvent, "MEDICAL", "event_date", classification="metadata_classification"))

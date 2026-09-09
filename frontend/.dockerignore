@@ -1,0 +1,9 @@
+node_modules
+dist
+test-results
+vite-e2e.log
+.replays
+*.log
+.git
+Dockerfile
+.dockerignore

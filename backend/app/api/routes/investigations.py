@@ -20,6 +20,7 @@ from app.api.deps import get_current_user, require_permissions
 from app.analysis import serializers as analysis_serializers
 from app.db.session import get_db
 from app.investigations import serializers
+from app.investigations.evidence_integrity import content_hash, evidence_fields
 from app.models.analytics import Alert, CorrelationResult
 from app.models.audit import AuditEvent
 from app.models.events import (
@@ -36,8 +37,13 @@ from app.models.investigations import (
     PRIORITY_LEVELS,
     INVESTIGATION_STATUSES,
     TASK_STATUSES,
+    SENSITIVITY_LEVELS,
+    EVIDENCE_SENSITIVE_MIN,
+    FINDING_EVIDENCE_VALIDITIES,
     EvidenceItem,
+    EvidenceVersion,
     Finding,
+    FindingEvidenceLink,
     Investigation,
     InvestigationNote,
     InvestigationTask,
@@ -66,14 +72,39 @@ class InvestigationPatchBody(BaseModel):
     priority: str | None = None
 
 
+class AssignmentBody(BaseModel):
+    """Assign the investigation to another user (or None to unassign)."""
+
+    assigned_to: uuid.UUID | None = None
+    note: str | None = None
+
+
 class EvidenceBody(BaseModel):
     title: str
     description: str | None = None
     evidence_type: str = "DOCUMENT"
     source: str | None = None
     classification: str = "UNCLASSIFIED"
+    sensitivity: str = "ROUTINE"
     item_date: datetime | None = None
     relationship_to_case: str | None = None
+
+
+class EvidencePatchBody(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    evidence_type: str | None = None
+    source: str | None = None
+    classification: str | None = None
+    sensitivity: str | None = None
+    item_date: datetime | None = None
+    relationship_to_case: str | None = None
+    change_reason: str | None = None
+
+
+class FindingEvidenceLinkBody(BaseModel):
+    evidence_id: uuid.UUID
+    validity: str = "SUPPORTING"
 
 
 class TaskBody(BaseModel):
@@ -133,11 +164,86 @@ def _validate_status(db: Session, value: str, allowed: tuple[str, ...]) -> str:
     return value
 
 
+def _validate_sensitivity(value: str) -> str:
+    value = value.upper()
+    if value not in SENSITIVITY_LEVELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported sensitivity; expected one of {', '.join(SENSITIVITY_LEVELS)}",
+        )
+    return value
+
+
+def _validate_validity(value: str) -> str:
+    value = value.upper()
+    if value not in FINDING_EVIDENCE_VALIDITIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported validity; expected one of {', '.join(FINDING_EVIDENCE_VALIDITIES)}",
+        )
+    return value
+
+
+def _can_view_sensitive(user: User) -> bool:
+    """RESTRICTED/HIGHLY_SENSITIVE evidence requires case-modification clearance."""
+    granted = {p.key for p in user.role.permissions}
+    return Permissions.INVESTIGATIONS_MODIFY in granted
+
+
+def _is_sensitive(item: EvidenceItem) -> bool:
+    try:
+        return SENSITIVITY_LEVELS.index(item.sensitivity) >= EVIDENCE_SENSITIVE_MIN
+    except ValueError:
+        return False
+
+
+def _get_evidence_item(db: Session, inv: Investigation, evidence_id: uuid.UUID) -> EvidenceItem:
+    item = db.get(EvidenceItem, evidence_id)
+    if item is None or item.investigation_id != inv.id:
+        raise HTTPException(status_code=404, detail="Evidence item not found")
+    if item.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Evidence item not found")
+    return item
+
+
+def _require_evidence_view(item: EvidenceItem, user: User) -> None:
+    if _is_sensitive(item) and not _can_view_sensitive(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Evidence at this sensitivity level requires INVESTIGATIONS_MODIFY",
+        )
+
+
+def _snapshot_evidence(db: Session, item: EvidenceItem, user: User, change_reason: str | None, deleted: bool = False) -> None:
+    """Append an append-only EvidenceVersion snapshot of the item's current state."""
+    fields = evidence_fields(item)
+    if deleted:
+        change_reason = change_reason or "Evidence item soft-deleted"
+    db.add(
+        EvidenceVersion(
+            evidence_id=item.id,
+            version_number=item.version,
+            title=fields["title"],
+            description=fields["description"],
+            evidence_type=fields["evidence_type"],
+            source=fields["source"],
+            classification=fields["classification"],
+            sensitivity=fields["sensitivity"],
+            sha256_hash=item.sha256_hash,
+            item_date=fields["item_date"],
+            relationship_to_case=fields["relationship_to_case"],
+            changed_by=user.id,
+            change_reason=change_reason,
+        )
+    )
+
+
 # --------------------------------------------------------------------------- case
 @router.get("/investigations", dependencies=[Depends(require_permissions(Permissions.INVESTIGATIONS_READ))])
 def list_investigations(
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     subject_id: Annotated[uuid.UUID | None, Query()] = None,
+    assigned_to: Annotated[uuid.UUID | None, Query()] = None,
     db: Session = Depends(get_db),
 ) -> dict:
     stmt = select(Investigation).order_by(Investigation.created_at.desc())
@@ -145,6 +251,8 @@ def list_investigations(
         stmt = stmt.where(Investigation.status == status_filter.upper())
     if subject_id:
         stmt = stmt.where(Investigation.subject_id == subject_id)
+    if assigned_to:
+        stmt = stmt.where(Investigation.assigned_to == assigned_to)
     rows = db.scalars(stmt).all()
     return {"count": len(rows), "investigations": [serializers.investigation_summary(i) for i in rows]}
 
@@ -155,6 +263,8 @@ def create_investigation(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    if body.assigned_to is not None and db.get(User, body.assigned_to) is None:
+        raise HTTPException(status_code=404, detail="Assigned user not found")
     inv = Investigation(
         title=body.title[:255],
         description=body.description,
@@ -220,6 +330,43 @@ def update_investigation(
     return serializers.investigation_summary(inv)
 
 
+@router.post("/investigations/{investigation_id}/assign", dependencies=[Depends(require_permissions(Permissions.INVESTIGATIONS_ASSIGN))])
+def assign_investigation(
+    investigation_id: uuid.UUID,
+    body: AssignmentBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Assign (or unassign) the case owner.
+
+    Requires INVESTIGATIONS_ASSIGN (ADMINISTRATOR / INVESTIGATOR). Previous and
+    new assignee are recorded in the audit trail (handover §18/§43).
+    """
+    inv = _get_inv(db, investigation_id)
+    if body.assigned_to is not None and db.get(User, body.assigned_to) is None:
+        raise HTTPException(status_code=404, detail="Assigned user not found")
+    previous = inv.assigned_to
+    if previous == body.assigned_to:
+        raise HTTPException(status_code=422, detail="Investigation is already assigned to that user")
+    inv.assigned_to = body.assigned_to
+    record_audit(
+        db,
+        actor_id=user.id,
+        action="INVESTIGATION_ASSIGNED",
+        entity_type="INVESTIGATION",
+        entity_id=str(inv.id),
+        metadata={
+            "case_ref": inv.case_ref,
+            "previous_assignee": str(previous) if previous else None,
+            "new_assignee": str(body.assigned_to) if body.assigned_to else None,
+            "note": body.note,
+        },
+    )
+    db.commit()
+    db.refresh(inv, ["assignee"])
+    return serializers.investigation_summary(inv)
+
+
 @router.post("/investigations/{investigation_id}/close", dependencies=[Depends(require_permissions(Permissions.INVESTIGATIONS_MODIFY))])
 def close_investigation(
     investigation_id: uuid.UUID,
@@ -266,7 +413,7 @@ def investigation_overview(investigation_id: uuid.UUID, db: Session = Depends(ge
         "originating_alert": origin,
         "counts": {
             "alerts": len(inv.alerts),
-            "evidence": len(inv.evidence),
+            "evidence": len([e for e in inv.evidence if e.deleted_at is None]),
             "tasks": len(inv.tasks),
             "notes": len(inv.notes),
             "findings": len(inv.findings),
@@ -368,6 +515,8 @@ def investigation_timeline(investigation_id: uuid.UUID, db: Session = Depends(ge
         })
 
     for e in inv.evidence:
+        if e.deleted_at is not None:
+            continue
         entries.append({
             "event_type": "EVIDENCE",
             "occurred_at": (e.item_date or e.created_at).isoformat() if (e.item_date or e.created_at) else None,
@@ -409,10 +558,30 @@ def investigation_timeline(investigation_id: uuid.UUID, db: Session = Depends(ge
 
 # ----------------------------------------------------------------------- evidence
 @router.get("/investigations/{investigation_id}/evidence", dependencies=[Depends(require_permissions(Permissions.INVESTIGATIONS_READ))])
-def list_evidence(investigation_id: uuid.UUID, db: Session = Depends(get_db)) -> dict:
+def list_evidence(
+    investigation_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
     inv = _get_inv(db, investigation_id)
-    rows = sorted(inv.evidence, key=lambda e: e.created_at or datetime.min, reverse=True)
+    rows = [e for e in inv.evidence if e.deleted_at is None]
+    if not _can_view_sensitive(user):
+        rows = [e for e in rows if not _is_sensitive(e)]
+    rows.sort(key=lambda e: e.created_at or datetime.min, reverse=True)
     return {"count": len(rows), "evidence": [serializers.evidence_item(e) for e in rows]}
+
+
+@router.get("/investigations/{investigation_id}/evidence/{evidence_id}", dependencies=[Depends(require_permissions(Permissions.INVESTIGATIONS_READ))])
+def get_evidence_item(
+    investigation_id: uuid.UUID,
+    evidence_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    inv = _get_inv(db, investigation_id)
+    item = _get_evidence_item(db, inv, evidence_id)
+    _require_evidence_view(item, user)
+    return {"evidence": serializers.evidence_item(item)}
 
 
 @router.post("/investigations/{investigation_id}/evidence", dependencies=[Depends(require_permissions(Permissions.EVIDENCE_CREATE))])
@@ -430,19 +599,30 @@ def create_evidence(
         evidence_type=body.evidence_type,
         source=body.source,
         classification=body.classification or "UNCLASSIFIED",
+        sensitivity=_validate_sensitivity(body.sensitivity),
         item_date=body.item_date,
         relationship_to_case=body.relationship_to_case,
         created_by=user.id,
     )
+    item.sha256_hash = content_hash(evidence_fields(item))
+    item.version = 1
     db.add(item)
     db.flush()
+    _snapshot_evidence(db, item, user, change_reason="Evidence item created")
     record_audit(
         db,
         actor_id=user.id,
         action="EVIDENCE_CREATED",
         entity_type="EVIDENCE",
         entity_id=str(item.id),
-        metadata={"investigation_id": str(inv.id), "title": item.title, "classification": item.classification},
+        metadata={
+            "investigation_id": str(inv.id),
+            "title": item.title,
+            "classification": item.classification,
+            "sensitivity": item.sensitivity,
+            "version": item.version,
+            "sha256": item.sha256_hash,
+        },
     )
     db.commit()
     return serializers.evidence_item(item)
@@ -452,28 +632,85 @@ def create_evidence(
 def update_evidence(
     investigation_id: uuid.UUID,
     evidence_id: uuid.UUID,
-    body: EvidenceBody,
+    body: EvidencePatchBody,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     inv = _get_inv(db, investigation_id)
-    item = db.get(EvidenceItem, evidence_id)
-    if item is None or item.investigation_id != inv.id:
-        raise HTTPException(status_code=404, detail="Evidence item not found")
-    for field in ("title", "description", "evidence_type", "source", "classification", "item_date", "relationship_to_case"):
+    item = _get_evidence_item(db, inv, evidence_id)
+    for field in ("title", "description", "evidence_type", "source", "classification",
+                  "sensitivity", "item_date", "relationship_to_case"):
         value = getattr(body, field)
         if value is not None:
+            if field == "sensitivity":
+                value = _validate_sensitivity(value)
             setattr(item, field, value)
+    item.sha256_hash = content_hash(evidence_fields(item))
+    item.version += 1
+    _snapshot_evidence(db, item, user, change_reason=body.change_reason)
     record_audit(
         db,
         actor_id=user.id,
         action="EVIDENCE_UPDATED",
         entity_type="EVIDENCE",
         entity_id=str(item.id),
-        metadata={"investigation_id": str(inv.id), "title": item.title},
+        metadata={
+            "investigation_id": str(inv.id),
+            "title": item.title,
+            "version": item.version,
+            "sensitivity": item.sensitivity,
+            "sha256": item.sha256_hash,
+            "change_reason": body.change_reason,
+        },
     )
     db.commit()
     return serializers.evidence_item(item)
+
+
+@router.delete("/investigations/{investigation_id}/evidence/{evidence_id}", dependencies=[Depends(require_permissions(Permissions.EVIDENCE_MODIFY))])
+def delete_evidence(
+    investigation_id: uuid.UUID,
+    evidence_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Controlled (soft) delete: preserves the audit trail, version history and any
+    finding->evidence links. A hard delete is intentionally not exposed."""
+    inv = _get_inv(db, investigation_id)
+    item = _get_evidence_item(db, inv, evidence_id)
+    item.deleted_at = datetime.now(timezone.utc)
+    item.deleted_by = user.id
+    item.version += 1
+    _snapshot_evidence(db, item, user, change_reason="Evidence item soft-deleted", deleted=True)
+    record_audit(
+        db,
+        actor_id=user.id,
+        action="EVIDENCE_DELETED",
+        entity_type="EVIDENCE",
+        entity_id=str(item.id),
+        metadata={"investigation_id": str(inv.id), "title": item.title, "version": item.version},
+    )
+    db.commit()
+    return serializers.evidence_item(item)
+
+
+@router.get("/investigations/{investigation_id}/evidence/{evidence_id}/versions", dependencies=[Depends(require_permissions(Permissions.INVESTIGATIONS_READ))])
+def evidence_versions(
+    investigation_id: uuid.UUID,
+    evidence_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    inv = _get_inv(db, investigation_id)
+    item = _get_evidence_item(db, inv, evidence_id)
+    _require_evidence_view(item, user)
+    versions = sorted(item.versions, key=lambda v: v.version_number)
+    return {
+        "evidence_id": str(item.id),
+        "current_version": item.version,
+        "count": len(versions),
+        "versions": [serializers.evidence_version_row(v) for v in versions],
+    }
 
 
 # -------------------------------------------------------------------------- tasks
@@ -557,6 +794,8 @@ def update_task(
         metadata={"investigation_id": str(inv.id), "title": task.title, "changed": changed, "status": task.status},
     )
     db.commit()
+    if "assigned_to" in changed:
+        db.refresh(task, ["assignee"])
     return serializers.task_row(task)
 
 
@@ -680,6 +919,101 @@ def update_finding(
         metadata={"investigation_id": str(inv.id), "title": finding.title},
     )
     db.commit()
+    return serializers.finding_row(finding)
+
+
+# ------------------------------------------------------------- finding->evidence links
+def _get_finding(db: Session, inv: Investigation, finding_id: uuid.UUID) -> Finding:
+    finding = db.get(Finding, finding_id)
+    if finding is None or finding.investigation_id != inv.id:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    return finding
+
+
+@router.post("/investigations/{investigation_id}/findings/{finding_id}/evidence", dependencies=[Depends(require_permissions(Permissions.INVESTIGATIONS_MODIFY))])
+def link_finding_evidence(
+    investigation_id: uuid.UUID,
+    finding_id: uuid.UUID,
+    body: FindingEvidenceLinkBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    inv = _get_inv(db, investigation_id)
+    finding = _get_finding(db, inv, finding_id)
+
+    evidence = db.get(EvidenceItem, body.evidence_id)
+    if evidence is None:
+        raise HTTPException(status_code=404, detail="Evidence item not found")
+    if evidence.investigation_id != inv.id:
+        raise HTTPException(
+            status_code=422, detail="Evidence belongs to a different investigation"
+        )
+    if evidence.deleted_at is not None:
+        raise HTTPException(status_code=409, detail="Evidence item has been deleted")
+
+    duplicate = db.scalar(
+        select(FindingEvidenceLink).where(
+            FindingEvidenceLink.finding_id == finding.id,
+            FindingEvidenceLink.evidence_id == evidence.id,
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="Finding is already linked to this evidence item")
+
+    link = FindingEvidenceLink(
+        finding_id=finding.id,
+        evidence_id=evidence.id,
+        validity=_validate_validity(body.validity),
+        created_by=user.id,
+    )
+    db.add(link)
+    db.flush()
+    record_audit(
+        db,
+        actor_id=user.id,
+        action="FINDING_EVIDENCE_LINKED",
+        entity_type="FINDING",
+        entity_id=str(finding.id),
+        metadata={
+            "investigation_id": str(inv.id),
+            "evidence_id": str(evidence.id),
+            "validity": link.validity,
+        },
+    )
+    db.commit()
+    db.expire(finding)
+    return serializers.finding_row(finding)
+
+
+@router.delete("/investigations/{investigation_id}/findings/{finding_id}/evidence/{evidence_id}", dependencies=[Depends(require_permissions(Permissions.INVESTIGATIONS_MODIFY))])
+def unlink_finding_evidence(
+    investigation_id: uuid.UUID,
+    finding_id: uuid.UUID,
+    evidence_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    inv = _get_inv(db, investigation_id)
+    finding = _get_finding(db, inv, finding_id)
+    link = db.scalar(
+        select(FindingEvidenceLink).where(
+            FindingEvidenceLink.finding_id == finding.id,
+            FindingEvidenceLink.evidence_id == evidence_id,
+        )
+    )
+    if link is None:
+        raise HTTPException(status_code=404, detail="Finding evidence link not found")
+    db.delete(link)
+    record_audit(
+        db,
+        actor_id=user.id,
+        action="FINDING_EVIDENCE_UNLINKED",
+        entity_type="FINDING",
+        entity_id=str(finding.id),
+        metadata={"investigation_id": str(inv.id), "evidence_id": str(evidence_id)},
+    )
+    db.commit()
+    db.expire(finding)
     return serializers.finding_row(finding)
 
 

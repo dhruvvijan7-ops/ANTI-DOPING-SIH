@@ -110,5 +110,38 @@ class User(Base):
 
     role: Mapped[Role] = relationship(back_populates="users", lazy="joined")
 
+    password_reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
     def __repr__(self) -> str:
         return f"<User {self.username}>"
+
+
+class PasswordResetToken(Base):
+    """One-time, expiring password-reset tokens.
+
+    Only the SHA-256 digest of the token is stored. Tokens are bound to a user,
+    single-use (used_at) and expire after a short window (FR-AUTH-012).
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="password_reset_tokens")
+
+    def __repr__(self) -> str:
+        return f"<PasswordResetToken user={self.user_id!s} used={self.used_at is not None}>"
