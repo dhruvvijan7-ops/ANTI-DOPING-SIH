@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAthletesQuery } from "@/lib/api/queries";
 import type { AthleteSummary } from "@/lib/api/types";
+import { LIST_LIMIT } from "@/lib/constants";
+import { ApiError } from "@/lib/api/client";
 import { PageHeader } from "@/components/ui/states";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState, ErrorState, PageLoading } from "@/components/ui/states";
@@ -12,7 +14,7 @@ import { ArrowRight, User } from "lucide-react";
 export default function Athletes() {
   const [q, setQ] = useState("");
   const navigate = useNavigate();
-  const list = useAthletesQuery({ q: q || undefined, limit: 250 });
+  const list = useAthletesQuery({ q: q || undefined, limit: LIST_LIMIT });
 
   const athletes = list.data?.athletes ?? [];
   const sorted = [...athletes].sort((a, b) => a.full_name.localeCompare(b.full_name));
@@ -39,7 +41,11 @@ export default function Athletes() {
       <Card>
         <CardBody>
           {list.isLoading ? <PageLoading label="Loading athletes" /> : list.isError ? (
-            <ErrorState title="Could not load athletes" onRetry={() => void list.refetch()} />
+            <ErrorState
+              title="Could not load athletes"
+              message={list.error instanceof ApiError ? list.error.message : undefined}
+              onRetry={() => void list.refetch()}
+            />
           ) : sorted.length === 0 ? (
             <EmptyState icon={<User className="h-6 w-6" />} title="No athletes found" description="Try adjusting the search filter." />
           ) : (

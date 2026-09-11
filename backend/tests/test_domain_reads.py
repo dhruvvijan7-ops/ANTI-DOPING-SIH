@@ -100,6 +100,13 @@ def test_athletes_require_authentication(client):
     assert client.get("/api/v1/athletes").status_code == 401
 
 
+def test_athletes_list_rejects_page_limit_above_server_cap(investigator_client):
+    resp = investigator_client.get("/api/v1/athletes", params={"limit": 250})
+    assert resp.status_code == 422
+    resp = investigator_client.get("/api/v1/athletes", params={"limit": 200})
+    assert resp.status_code == 200
+
+
 def test_viewer_can_read_athletes(viewer_client, db):
     _seed(db)
     assert viewer_client.get("/api/v1/athletes").status_code == 200
@@ -272,6 +279,13 @@ def test_intelligence_list_filters_and_detail(investigator_client, db):
 
 def test_intelligence_requires_authentication(client):
     assert client.get("/api/v1/intelligence/reports").status_code == 401
+
+
+def test_intelligence_list_rejects_page_limit_above_server_cap(investigator_client):
+    resp = investigator_client.get("/api/v1/intelligence/reports", params={"limit": 250})
+    assert resp.status_code == 422
+    resp = investigator_client.get("/api/v1/intelligence/reports", params={"limit": 200})
+    assert resp.status_code == 200
 
 
 def test_intelligence_source_name_redacted_when_confidential(investigator_client, db):

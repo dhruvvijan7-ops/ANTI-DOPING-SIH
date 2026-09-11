@@ -58,5 +58,15 @@ class Permissions:
     REPORTS_GENERATE = "reports:generate"
     REPORTS_READ = "reports:read"
 
+    # Batch data import
+    IMPORTS_READ = "imports:read"
+    IMPORTS_CREATE = "imports:create"
+    IMPORTS_COMMIT = "imports:commit"
+
+    # OSINT (real public/open-source collection)
+    OSINT_READ = "osint:read"
+    OSINT_COLLECT = "osint:collect"
+    OSINT_ADMIN = "osint:admin"
+
     # Resources
     RESOURCES_READ = "resources:read"

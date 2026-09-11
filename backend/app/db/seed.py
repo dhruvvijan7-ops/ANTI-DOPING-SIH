@@ -46,6 +46,12 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         Permissions.EVIDENCE_MODIFY,
         Permissions.REPORTS_GENERATE,
         Permissions.REPORTS_READ,
+        Permissions.IMPORTS_READ,
+        Permissions.IMPORTS_CREATE,
+        Permissions.IMPORTS_COMMIT,
+        Permissions.OSINT_READ,
+        Permissions.OSINT_COLLECT,
+        Permissions.OSINT_ADMIN,
         Permissions.RESOURCES_READ,
     ],
     Roles.INVESTIGATOR: [
@@ -66,7 +72,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         Permissions.EVIDENCE_MODIFY,
         Permissions.REPORTS_GENERATE,
         Permissions.REPORTS_READ,
-        Permissions.AUDIT_READ,
+        Permissions.IMPORTS_READ,
+        Permissions.IMPORTS_CREATE,
+        Permissions.IMPORTS_COMMIT,
+        Permissions.OSINT_READ,
+        Permissions.OSINT_COLLECT,
         Permissions.RESOURCES_READ,
     ],
     Roles.INTELLIGENCE_ANALYST: [
@@ -82,6 +92,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         Permissions.INVESTIGATIONS_CREATE,
         Permissions.EVIDENCE_CREATE,
         Permissions.REPORTS_READ,
+        Permissions.OSINT_READ,
+        Permissions.OSINT_COLLECT,
+        Permissions.OSINT_ADMIN,
         Permissions.RESOURCES_READ,
     ],
     Roles.VIEWER: [
@@ -91,7 +104,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         Permissions.ATHLETES_READ,
         Permissions.INVESTIGATIONS_READ,
         Permissions.REPORTS_READ,
-        Permissions.AUDIT_READ,
+        Permissions.IMPORTS_READ,
+        Permissions.OSINT_READ,
         Permissions.RESOURCES_READ,
     ],
 }
@@ -173,4 +187,9 @@ def seed_users(db: Session) -> None:
 def run_seed(db: Session) -> None:
     seed_roles_and_permissions(db)
     seed_users(db)
+
+    # OSINT default source registry (real public-source CONFIGURATION only).
+    from app.osint.seeds import seed_default_osint_sources
+
+    seed_default_osint_sources(db)
     logger.info("RBAC seed complete")

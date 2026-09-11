@@ -1,5 +1,5 @@
 """Subject entities: athletes, support personnel, teams, organizations, providers,
-and supplements which are substances supplied by providers."""
+supplements, events, competitions, locations, and sources (graph gate §98)."""
 from __future__ import annotations
 
 import uuid
@@ -151,6 +151,76 @@ class SupportPersonAthleteLink(Base):
         index=True,
     )
     relationship_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Event(Base):
+    """Competition event or significant occurrence (graph gate §98)."""
+
+    __tablename__ = "events"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
+    external_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    event_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Competition(Base):
+    """Sporting competition entry (graph gate §98)."""
+
+    __tablename__ = "competitions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
+    external_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    sport: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    level: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Location(Base):
+    """Geographical location for relationship graph (graph gate §98)."""
+
+    __tablename__ = "locations"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
+    external_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    country: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    location_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Source(Base):
+    """Named information source distinct from IntelligenceSource (graph gate §98)."""
+
+    __tablename__ = "sources"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
+    external_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    source_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reliability: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

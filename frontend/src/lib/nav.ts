@@ -1,4 +1,4 @@
-// Canonical permission keys (mirrored from the backend's 26 permissions).
+// Canonical permission keys (mirrored from the backend's 29 permissions).
 export const PERMISSIONS = {
   alertsRead: "alerts:read",
   alertsReview: "alerts:review",
@@ -12,6 +12,9 @@ export const PERMISSIONS = {
   auditRead: "audit:read",
   evidenceCreate: "evidence:create",
   evidenceModify: "evidence:modify",
+  importsRead: "imports:read",
+  importsCreate: "imports:create",
+  importsCommit: "imports:commit",
   intelligenceRead: "intelligence:read",
   intelligenceCreate: "intelligence:create",
   intelligenceModify: "intelligence:modify",
@@ -19,6 +22,9 @@ export const PERMISSIONS = {
   investigationsCreate: "investigations:create",
   investigationsModify: "investigations:modify",
   investigationsAssign: "investigations:assign",
+  osintRead: "osint:read",
+  osintCollect: "osint:collect",
+  osintAdmin: "osint:admin",
   reportsRead: "reports:read",
   reportsGenerate: "reports:generate",
   usersManage: "users:manage",
@@ -28,6 +34,8 @@ export const DROP_PERMISSIONS = {
   intelligenceRead: "intelligence:read",
   alertsRead: "alerts:read",
   athletesRead: "athletes:read",
+  importsRead: "imports:read",
+  osintRead: "osint:read",
   investigationsRead: "investigations:read",
   reportsRead: "reports:read",
   auditRead: "audit:read",

@@ -1,8 +1,14 @@
-"""Intelligence read APIs (G3): report listing/detail with source redaction.
+"""Intelligence read APIs (G3) + manual report creation.
 
-Confidential source identity is not exposed unnecessarily: for sources whose
-confidentiality indicates a sensitive classification, the source name is withheld
-from API responses (source type/quality metadata remains available for context).
+Report listing/detail with source redaction: confidential source identity is not
+exposed unnecessarily. For sources whose confidentiality indicates a sensitive
+classification, the source name is withheld from API responses (source
+type/quality metadata remains available for context).
+
+Manual intelligence creation (gate §783/§787/§1002) is analyst work product: the
+analyst selects an existing source, links the report to a subject and records the
+assessment fields. It is only ever a human decision; the engine never fabricates
+reports.
 """
 from __future__ import annotations
 
@@ -11,21 +17,31 @@ from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_permissions
+from app.api.deps import get_current_user, require_permissions
 from app.db.session import get_db
-from app.models.intelligence import IntelligenceReport, IntelligenceSource, SourceAssessment
+from app.models.identity import User
+from app.models.intelligence import (
+    SUBJECT_TYPES,
+    IntelligenceReport,
+    IntelligenceSource,
+    SourceAssessment,
+)
 from app.security.rbac import Permissions
+from app.services.audit_service import record_audit
 from app.services.domain_reads import name_for, resolve_names
 
 router = APIRouter(tags=["intelligence"])
 
 _READ = [Depends(require_permissions(Permissions.INTELLIGENCE_READ))]
+_CREATE = [Depends(require_permissions(Permissions.INTELLIGENCE_CREATE))]
 
 # Confidentiality levels at which the source name is withheld from responses.
 _REDACTED_CONFIDENTIALITY = {"CONFIDENTIAL", "RESTRICTED", "SECRET", "TOP_SECRET", "CLASSIFIED"}
+_STATUSES = ("NEW", "REVIEWED", "ASSESSED")
 
 
 def _source_summary(src: IntelligenceSource | None) -> dict | None:
@@ -61,6 +77,12 @@ def intel_summary(r: IntelligenceReport, subject_name: str | None = None) -> dic
         "subject_name": subject_name,
         "source": _source_summary(r.source),
         "tags": [t.name for t in r.tags],
+        "url": r.url,
+        "canonical_url": r.canonical_url,
+        "publisher": r.publisher,
+        "retrieved_at": r.retrieved_at.isoformat() if r.retrieved_at else None,
+        "content_hash": r.content_hash,
+        "osint_record_id": str(r.osint_record_id) if r.osint_record_id else None,
     }
 
 
@@ -151,3 +173,125 @@ def intelligence_detail(report_id: uuid.UUID, db: Session = Depends(get_db)) -> 
             for a in assessments
         ],
     }
+
+
+@router.get("/intelligence/sources", dependencies=_READ, summary="List intelligence sources")
+def list_intelligence_sources(
+    source_type: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Active sources available for manual intelligence recording. Source names are
+    redacted for confidential classifications (same rule as report responses)."""
+    limit = min(max(limit, 1), 200)
+    offset = max(offset, 0)
+    stmt = select(IntelligenceSource).where(IntelligenceSource.is_active.is_(True))
+    if source_type:
+        stmt = stmt.where(IntelligenceSource.source_type == source_type.upper())
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = db.scalars(stmt.order_by(IntelligenceSource.name).offset(offset).limit(limit)).all()
+    return {
+        "count": total,
+        "limit": limit,
+        "offset": offset,
+        "sources": [
+            {
+                **(_source_summary(s) or {}),
+                "external_ref": s.external_ref,
+            }
+            for s in rows
+        ],
+    }
+
+
+class IntelligenceReportBody(BaseModel):
+    """Manual intelligence record. The source id must reference an existing
+    source; the subject link is optional but must pair type+id when provided."""
+
+    source_id: uuid.UUID
+    title: str
+    description: str | None = None
+    subject_type: str | None = None
+    subject_id: uuid.UUID | None = None
+    report_date: date | None = None
+    reliability: str | None = None
+    information_quality: str | None = None
+    confidentiality: str = "INTERNAL"
+    status: str = "NEW"
+    info_category: str | None = None
+
+
+@router.post("/intelligence/reports", dependencies=_CREATE, summary="Record intelligence manually")
+def create_intelligence_report(
+    body: IntelligenceReportBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Human-recorded intelligence: the analyst (not the engine) decides what is
+    recorded, from which source, and how it should be assessed."""
+    source = db.get(IntelligenceSource, body.source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Intelligence source not found")
+
+    title = (body.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Intelligence report requires a title")
+    if bool(body.subject_type) != bool(body.subject_id):
+        raise HTTPException(
+            status_code=422,
+            detail="subject_type and subject_id must be provided together",
+        )
+    subject_type = (body.subject_type or "").upper() or None
+    if subject_type and subject_type not in SUBJECT_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported subject type; expected one of {', '.join(SUBJECT_TYPES)}",
+        )
+
+    status = (body.status or "NEW").upper()
+    if status not in _STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported status; expected one of {', '.join(_STATUSES)}",
+        )
+
+    report = IntelligenceReport(
+        source_id=source.id,
+        subject_type=subject_type,
+        subject_id=body.subject_id if subject_type else None,
+        title=title[:255],
+        description=body.description,
+        report_date=body.report_date,
+        reliability=(body.reliability or "").upper()[:8] or None,
+        information_quality=(body.information_quality or "").upper()[:8] or None,
+        confidentiality=(body.confidentiality or "INTERNAL").upper()[:32],
+        status=status,
+        info_category=(body.info_category or "").upper()[:64] or None,
+        is_duplicate=False,
+        created_by=user.id,
+    )
+    db.add(report)
+    db.flush()
+    record_audit(
+        db,
+        actor_id=user.id,
+        action="INTELLIGENCE_CREATED",
+        entity_type="INTELLIGENCE_REPORT",
+        entity_id=str(report.id),
+        metadata={
+            "source_id": str(source.id),
+            "subject_type": subject_type,
+            "subject_id": str(report.subject_id) if report.subject_id else None,
+            "title": report.title,
+            "info_category": report.info_category,
+            "status": report.status,
+        },
+    )
+    db.commit()
+    subject_name = (
+        name_for(db, report.subject_type, report.subject_id)
+        if report.subject_id and report.subject_type
+        else None
+    )
+    return intel_summary(report, subject_name)

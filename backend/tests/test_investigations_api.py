@@ -37,7 +37,7 @@ def _audit_actions(db: Session, entity_type: str, entity_id: str) -> list[str]:
     return [r.action for r in rows]
 
 
-def test_triage_workflow_persists_across_requests(analyst_client, investigator_client, db):
+def test_triage_workflow_persists_across_requests(admin_client, analyst_client, investigator_client, db):
     seed_domain(db)
     db.commit()
 
@@ -144,7 +144,7 @@ def test_triage_workflow_persists_across_requests(analyst_client, investigator_c
     }
 
     # --- audit trail shows who did what on which object -------------------
-    audit = investigator_client.get(f"/api/v1/investigations/{investigation_id}/audit").json()
+    audit = admin_client.get(f"/api/v1/investigations/{investigation_id}/audit").json()
     actions = {a["action"] for a in audit["audit"]}
     assert {"INVESTIGATION_CREATED", "ALERT_CONVERTED", "EVIDENCE_CREATED",
             "TASK_CREATED", "NOTE_CREATED", "FINDING_CREATED"} <= actions

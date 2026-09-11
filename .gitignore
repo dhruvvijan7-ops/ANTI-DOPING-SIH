@@ -72,3 +72,6 @@ postgres-data/
 *.h5
 *.pt
 !examples/**/*.pkl
+# Test runner artifacts
+frontend/test-results/
+.freebuff/

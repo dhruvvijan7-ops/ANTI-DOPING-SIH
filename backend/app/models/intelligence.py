@@ -88,6 +88,14 @@ class IntelligenceReport(Base):
     ingestion_date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
+    url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    canonical_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    publisher: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    osint_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("osint_records.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     reliability: Mapped[str | None] = mapped_column(String(8), nullable=True)
     information_quality: Mapped[str | None] = mapped_column(String(8), nullable=True)
     confidentiality: Mapped[str] = mapped_column(String(32), default="INTERNAL", nullable=False)

@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileSearch, X } from "lucide-react";
 import { formatDate, timeAgo } from "@/lib/utils";
-import { infoCategoryLabel, reliabilityLabel } from "@/lib/constants";
+import { LIST_LIMIT, infoCategoryLabel, reliabilityLabel } from "@/lib/constants";
+import { ApiError } from "@/lib/api/client";
 import { useIntelDetailQuery, useIntelligenceQuery } from "@/lib/api/queries";
 import type { IntelListItem } from "@/lib/api/types";
 import { PageHeader } from "@/components/ui/states";
@@ -16,7 +17,7 @@ export default function Intelligence() {
   const [selected, setSelected] = useState<IntelListItem | null>(null);
   const navigate = useNavigate();
 
-  const list = useIntelligenceQuery({ limit: 250, q: q || undefined });
+  const list = useIntelligenceQuery({ limit: LIST_LIMIT, q: q || undefined });
   const detail = useIntelDetailQuery(selected?.id);
 
   const reports = list.data?.reports ?? [];
@@ -45,7 +46,11 @@ export default function Intelligence() {
           </div>
 
           {list.isError ? (
-            <ErrorState title="Could not load intelligence" onRetry={() => void list.refetch()} />
+            <ErrorState
+              title="Could not load intelligence"
+              message={list.error instanceof ApiError ? list.error.message : undefined}
+              onRetry={() => void list.refetch()}
+            />
           ) : list.isLoading ? (
             <PageLoading label="Loading intelligence" />
           ) : reports.length === 0 ? (

@@ -10,8 +10,10 @@ from app.api.routes import (
     auth,
     dashboard,
     health,
+    imports,
     intelligence,
     investigations,
+    osint,
     relationships,
     reports,
     subjects,
@@ -30,4 +32,6 @@ api_router.include_router(ai.router, prefix="")
 api_router.include_router(dashboard.router, prefix="")
 api_router.include_router(subjects.router, prefix="")
 api_router.include_router(intelligence.router, prefix="")
+api_router.include_router(imports.router, prefix="")
+api_router.include_router(osint.router, prefix="")
 api_router.include_router(relationships.router, prefix="")

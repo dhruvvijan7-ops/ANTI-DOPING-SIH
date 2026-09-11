@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Eye, FileText, Plus, Send } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Eye, FileText, Pencil, Plus, Send } from "lucide-react";
 import {
   useCreateReportMutation,
   usePublishReportMutation,
@@ -17,12 +18,15 @@ import { Field, Input, Textarea } from "@/components/ui/field";
 import { toastError, toastSuccess } from "@/components/ui/toasts";
 
 export function InvReports({ id }: { id: string }) {
+  const navigate = useNavigate();
   const list = useReportsQuery(id);
   const canGenerate = useCan("reports:generate");
   const [showCreate, setShowCreate] = useState(false);
   const [viewing, setViewing] = useState<ReportItem | null>(null);
 
   const items = [...(list.data?.reports ?? [])].sort((a, b) => b.version - a.version);
+
+  const openEditor = (r: ReportItem) => navigate(`/investigations/${r.investigation_id}/reports/${r.id}/edit`);
 
   return (
     <div>
@@ -56,8 +60,11 @@ export function InvReports({ id }: { id: string }) {
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <Published r={r} />
-                    <Button size="sm" variant="outline" onClick={() => setViewing(r)} leadingIcon={<Eye className="h-4 w-4" />}>
-                      View
+                    <Button size="sm" variant="outline" onClick={() => openEditor(r)} leadingIcon={<Pencil className="h-4 w-4" />}>
+                      Open
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setViewing(r)} leadingIcon={<Eye className="h-4 w-4" />}>
+                      Summary
                     </Button>
                   </div>
                 </li>
@@ -130,6 +137,7 @@ function Section({ title, body }: { title: string; body: string }) {
 }
 
 function CreateReportDialog({ open, onClose, investigationId }: { open: boolean; onClose: () => void; investigationId: string }) {
+  const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [purpose, setPurpose] = useState("");
   const [outcome, setOutcome] = useState("");
@@ -137,7 +145,11 @@ function CreateReportDialog({ open, onClose, investigationId }: { open: boolean;
   const [error, setError] = useState<string | null>(null);
 
   const create = useCreateReportMutation({
-    onSuccess: () => { toastSuccess("Draft report created."); onClose(); },
+    onSuccess: (data) => {
+      toastSuccess("Draft report created. Opening the editor…");
+      onClose();
+      navigate(`/investigations/${investigationId}/reports/${data.id}/edit`);
+    },
     onError: (e) => { const m = e instanceof Error ? e.message : "Failed to create report"; setError(m); toastError(m); },
   });
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { useCan } from "@/stores/auth";
 import { useInvestigationOverviewQuery } from "@/lib/api/queries";
 import { priorityLabel } from "@/lib/constants";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
@@ -36,6 +37,7 @@ export default function InvestigationWorkspace() {
   const [tab, setTab] = useState<TabKey>("overview");
 
   const overview = useInvestigationOverviewQuery(investigationId);
+  const canAudit = useCan("audit:read");
 
   if (overview.isLoading) return <PageLoading label="Loading case workspace" />;
   if (overview.isError || !overview.data || !investigationId)
@@ -61,7 +63,7 @@ export default function InvestigationWorkspace() {
     { key: "intelligence", label: "Intelligence" },
     { key: "ai", label: "AI assistant" },
     { key: "reports", label: "Reports", count: counts.reports },
-    { key: "audit", label: "Audit" },
+    ...(canAudit ? [{ key: "audit" as TabKey, label: "Audit" }] : []),
   ];
 
   return (

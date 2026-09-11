@@ -76,7 +76,11 @@ def _clean_domain_tables():
         session.execute(
             text(
                 "TRUNCATE analysis_runs, athletes, intelligence_sources, "
-                "relationship_types, synthetic_scenarios RESTART IDENTITY CASCADE"
+                "relationship_types, synthetic_scenarios, investigations, "
+                "timeline_events, entity_relationships, "
+                "relationship_node_features, events, competitions, "
+                "locations, sources, import_rows, data_imports, "
+                "osint_claims, osint_mentions, osint_records, osint_sources RESTART IDENTITY CASCADE"
             )
         )
         session.commit()

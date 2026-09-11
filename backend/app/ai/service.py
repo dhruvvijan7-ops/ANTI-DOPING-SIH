@@ -84,6 +84,18 @@ class AIService(ABC):
     ) -> dict[str, Any]:
         ...
 
+    @abstractmethod
+    def report_document_draft(self, ctx: CaseContext, purpose: str | None = None) -> list[dict[str, Any]]:
+        """Return a structured rich-text block list (AI-generated) grounded in the
+        case context. Never invents data; missing categories are stated as such."""
+        ...
+
+    @abstractmethod
+    def report_section_assist(self, ctx: CaseContext, section: str) -> list[dict[str, Any]]:
+        """Produce an AI-assisted block (or blocks) for a named report section,
+        grounded strictly in available case context."""
+        ...
+
     def respond(self, operation: str, content: list[dict[str, Any]]) -> dict[str, Any]:
         return {
             "provider": self.provider_name,
@@ -238,6 +250,178 @@ class DeterministicFallbackAIService(AIService):
     def _sig_line(self, sig: dict[str, Any]) -> str:
         return _describe_signal(sig)
 
+    # --------------------------------------------------- structured report draft
+    def report_document_draft(self, ctx: CaseContext, purpose: str | None = None) -> list[dict[str, Any]]:
+        import uuid  # noqa: PLC0415
+        nid = uuid.uuid4
+
+        def block(btype: str, *, text: str = "", items: list[str] | None = None,
+                  head: list[str] | None = None, rows: list[list[str]] | None = None,
+                  level: int = 2, refs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+            return {
+                "id": f"ai-{nid().hex[:8]}",
+                "type": btype,
+                "text": text or None,
+                "attrs": {"level": level} if btype == "heading" else {},
+                "items": items or [],
+                "head": head or [],
+                "rows": rows or [],
+                "provenance": {"kind": "ai", "refs": refs or []},
+            }
+
+        out: list[dict[str, Any]] = []
+        na = "Information not available in the current case record."
+
+        out.append(block("heading", text="Executive summary", level=1))
+        out.append(block("paragraph", text=(
+            f"This draft summarises investigation {ctx.case_ref} ('{ctx.title}'), which is {ctx.status} "
+            f"with priority {ctx.priority}. The subject is {ctx.subject_type} {ctx.subject_label or ctx.subject_id}."
+        )))
+        if ctx.alert_ref:
+            out.append(block("paragraph", text=(
+                f"The originating alert {ctx.alert_ref} records priority level {ctx.alert_level}"
+                f"{f' (score {ctx.alert_score:.0f}/100)' if ctx.alert_score is not None else ''}."
+            )))
+
+        out.append(block("heading", text="Subject", level=1))
+        out.append(block("paragraph", text=(
+            f"Subject: {ctx.subject_type} {ctx.subject_label or ctx.subject_id}. Stability and identity are "
+            "established from the case record." if ctx.subject_label else f"Subject identifier: {ctx.subject_id}. {na}"
+        )))
+
+        out.append(block("heading", text="Scope", level=1))
+        out.append(block("paragraph", text=(
+            "This report covers the recorded intelligence, events, relationships, evidence and findings "
+            "linked to the case at the time the AI draft was generated."
+        )))
+
+        out.append(block("heading", text="Methodology", level=1))
+        out.append(block("paragraph", text=(
+            "This AI-generated draft was produced as decision support from the verified case record. "
+            "It does not determine guilt or recommend sanctions and must be reviewed by an investigator."
+        )))
+
+        out.append(block("heading", text="Timeline", level=1))
+        if ctx.events:
+            ordered = sorted(ctx.events, key=lambda e: e.get("occurred_on") or "")
+            rows = [[e.get("occurred_on") or "", e.get("category") or "", e.get("detail") or ""] for e in ordered]
+            out.append(block("table", head=["Date", "Category", "Detail"], rows=rows))
+        else:
+            out.append(block("paragraph", text=na))
+
+        out.append(block("heading", text="Intelligence", level=1))
+        if ctx.intelligence:
+            rows = [[i.get("source") or "", i.get("title") or "", i.get("report_date") or "", i.get("reliability") or ""]
+                    for i in ctx.intelligence]
+            out.append(block("table", head=["Source", "Title", "Date", "Reliability"], rows=rows))
+        else:
+            out.append(block("paragraph", text=na))
+
+        out.append(block("heading", text="Evidence", level=1))
+        if ctx.evidence:
+            rows = [[e.get("title") or "", e.get("evidence_type") or "", e.get("classification") or ""]
+                    for e in ctx.evidence]
+            out.append(block("table", head=["Title", "Type", "Classification"], rows=rows))
+        else:
+            out.append(block("paragraph", text=na))
+
+        out.append(block("heading", text="Findings", level=1))
+        if ctx.findings:
+            for f in ctx.findings:
+                out.append(block("paragraph", text=f"{f.get('title')}: {f.get('statement')}"))
+        else:
+            out.append(block("paragraph", text=na))
+
+        out.append(block("heading", text="Relationships", level=1))
+        if ctx.relationships:
+            items = [f"{r.get('type')} (confidence {r.get('confidence')}) - {r.get('other_entity')}" for r in ctx.relationships]
+            out.append(block("list", items=items))
+        else:
+            out.append(block("paragraph", text=na))
+
+        out.append(block("heading", text="Assessment", level=1))
+        if ctx.signals:
+            for s in ctx.signals:
+                out.append(block("paragraph", text=_describe_signal(s)))
+        else:
+            out.append(block("paragraph", text="No analytical signals are linked to this case."))
+
+        out.append(block("heading", text="Gaps", level=1))
+        for gap in self.information_gaps(ctx):
+            out.append(block("paragraph", text=gap["statement"]))
+
+        out.append(block("heading", text="Recommendations", level=1))
+        for q in self.investigation_questions(ctx):
+            out.append(block("paragraph", text=f"Investigate: {q['statement']}"))
+
+        if purpose:
+            out.insert(1, block("heading", text="Purpose", level=1))
+            out.insert(2, block("paragraph", text=purpose))
+
+        return out
+
+    def report_section_assist(self, ctx: CaseContext, section: str) -> list[dict[str, Any]]:
+        import uuid  # noqa: PLC0415
+
+        def block(text: str, *, refs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+            return {
+                "id": f"ai-sec-{uuid.uuid4().hex[:8]}",
+                "type": "paragraph",
+                "text": text,
+                "attrs": {},
+                "items": [],
+                "head": [],
+                "rows": [],
+                "provenance": {"kind": "ai", "refs": refs or []},
+            }
+
+        s = section.strip().lower()
+        if s in ("timeline", "timeline summary", "summarize timeline"):
+            if not ctx.events:
+                return [block("Information not available in the current case record.")]
+            rows = [[e.get("occurred_on") or "", e.get("category") or "", e.get("detail") or ""]
+                    for e in sorted(ctx.events, key=lambda e: e.get("occurred_on") or "")]
+            return [{"id": f"ai-sec-{uuid.uuid4().hex[:8]}", "type": "table", "text": None, "attrs": {},
+                     "items": [], "head": ["Date", "Category", "Detail"], "rows": rows,
+                     "provenance": {"kind": "ai", "refs": []}}]
+        if s in ("evidence", "evidence summary", "draft evidence summary", "summarize evidence"):
+            if not ctx.evidence:
+                return [block("Information not available in the current case record.")]
+            rows = [[e.get("title") or "", e.get("evidence_type") or "", e.get("classification") or ""]
+                    for e in ctx.evidence]
+            return [{"id": f"ai-sec-{uuid.uuid4().hex[:8]}", "type": "table", "text": None, "attrs": {},
+                     "items": [], "head": ["Title", "Type", "Classification"], "rows": rows,
+                     "provenance": {"kind": "ai", "refs": []}}]
+        if s in ("findings", "draft findings", "summarize findings"):
+            if not ctx.findings:
+                return [block("Information not available in the current case record.")]
+            return [block(f"{f.get('title')}: {f.get('statement')}") for f in ctx.findings]
+        if s in ("intelligence", "draft intelligence assessment", "summarize intelligence"):
+            if not ctx.intelligence:
+                return [block("Information not available in the current case record.")]
+            items = [f"{i.get('source') or ''} - {i.get('title')} ({i.get('report_date')}, {i.get('reliability')})"
+                     for i in ctx.intelligence]
+            return [{"id": f"ai-sec-{uuid.uuid4().hex[:8]}", "type": "list", "text": None, "attrs": {},
+                     "items": items, "head": [], "rows": [],
+                     "provenance": {"kind": "ai", "refs": []}}]
+        if s in ("relationships", "relationship summary", "summarize relationships"):
+            if not ctx.relationships:
+                return [block("Information not available in the current case record.")]
+            items = [f"{r.get('type')} (confidence {r.get('confidence')}) - {r.get('other_entity')}"
+                     for r in ctx.relationships]
+            return [{"id": f"ai-sec-{uuid.uuid4().hex[:8]}", "type": "list", "text": None, "attrs": {},
+                     "items": items, "head": [], "rows": [],
+                     "provenance": {"kind": "ai", "refs": []}}]
+        if s in ("gaps", "identify gaps"):
+            return [block(g["statement"]) for g in self.information_gaps(ctx)]
+        if s in ("questions", "generate investigative questions", "investigative questions"):
+            return [block(q["statement"]) for q in self.investigation_questions(ctx)]
+        if s in ("assessment", "draft intelligence assessment"):
+            if not ctx.signals:
+                return [block("No analytical signals are linked to this case.")]
+            return [block(_describe_signal(sig)) for sig in ctx.signals]
+        return [block(f"Section '{section}' is not a supported AI assistance request. Choose a supported section.")]
+
 
 class LLMAIService(AIService):
     """Base for provider-backed implementations.
@@ -284,6 +468,15 @@ class LLMAIService(AIService):
         unresolved_questions: list[str] | None = None,
     ) -> dict[str, Any]:
         return self._run("report_draft", ctx)
+
+    def report_document_draft(self, ctx: CaseContext, purpose: str | None = None) -> list[dict[str, Any]]:
+        # Structured block drafts are favoured for safety and testability; the
+        # provider path reuses the deterministic, grounded construction which is
+        # already scoped to retrieved case data.
+        return DeterministicFallbackAIService().report_document_draft(ctx, purpose=purpose)
+
+    def report_section_assist(self, ctx: CaseContext, section: str) -> list[dict[str, Any]]:
+        return DeterministicFallbackAIService().report_section_assist(ctx, section)
 
 
 class OpenAICompatibleLLMService(LLMAIService):

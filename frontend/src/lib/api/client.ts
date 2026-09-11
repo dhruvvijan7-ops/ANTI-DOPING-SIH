@@ -15,6 +15,7 @@ export class ApiError extends Error {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || "/api/v1";
+export { API_BASE };
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
@@ -65,6 +66,50 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
 
   let payload: unknown = null;
   const text = await response.text();
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = null;
+    }
+  }
+
+  if (!response.ok) {
+    const envelope = (payload as { error?: { code?: string; message?: string; request_id?: string } })?.error;
+    if (response.status === 401) {
+      useAuthStore.getState().clearSession();
+    }
+    throw new ApiError(
+      response.status,
+      envelope?.code ?? `HTTP_${response.status}`,
+      envelope?.message ?? `Request failed with status ${response.status}`,
+      envelope?.request_id ?? null,
+    );
+  }
+
+  return payload as T;
+}
+
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const token = useAuthStore.getState().token;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers,
+      body: formData,
+      credentials: "omit",
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(0, "NETWORK_ERROR", "Unable to reach the VERITY platform. Check your connection and try again.");
+  }
+
+  const text = await response.text();
+  let payload: unknown = null;
   if (text) {
     try {
       payload = JSON.parse(text);

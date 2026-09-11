@@ -103,6 +103,9 @@ class Investigation(Base):
     findings: Mapped[list["Finding"]] = relationship(
         back_populates="investigation", cascade="all, delete-orphan"
     )
+    timeline_events: Mapped[list["TimelineEvent"]] = relationship(
+        back_populates="investigation", cascade="all, delete-orphan"
+    )
 
 
 class EvidenceItem(Base):
@@ -245,6 +248,38 @@ class InvestigationNote(Base):
 
     investigation: Mapped[Investigation] = relationship(back_populates="notes")
     author: Mapped["User | None"] = relationship("User", foreign_keys=[author_id], lazy="joined")
+
+
+class TimelineEvent(Base):
+    """Manual reconstruction entry on the case timeline (§workshop).
+
+    Unlike engine events (testing/ABP/whereabouts/...) the analyst chooses the
+    moment, category and one-line summary. These entries are human-authored work
+    product used to rebuild the sequence of events around a case; the originating
+    source is recorded so the entry can be traced back to its basis.
+    """
+
+    __tablename__ = "timeline_events"
+    __table_args__ = (Index("ix_timeline_case", "investigation_id", "occurred_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=_uuid)
+    investigation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(32), default="MANUAL", nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    investigation: Mapped[Investigation] = relationship(back_populates="timeline_events")
 
 
 class FindingEvidenceLink(Base):

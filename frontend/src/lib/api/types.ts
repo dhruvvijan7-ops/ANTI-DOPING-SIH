@@ -43,8 +43,11 @@ export const PERMISSION_KEYS = [
   "investigations:assign",
   "investigations:create",
   "investigations:modify",
-  "investigations:read",
+"investigations:read",
   "models:manage",
+  "osint:admin",
+  "osint:collect",
+  "osint:read",
   "reports:generate",
   "reports:read",
   "resources:read",
@@ -133,7 +136,25 @@ export type AlertStatus =
 export type SensitivityLevel = "ROUTINE" | "SENSITIVE" | "HIGHLY_SENSITIVE" | "RESTRICTED";
 export type EvidenceType = "DOCUMENT" | "TEST" | "SCREENSHOT" | "STATEMENT" | "OTHER";
 export type FindingEvidenceValidity = "SUPPORTING" | "CONTRADICTING" | "REVIEW";
-export type ReportStatus = "DRAFT" | "FINAL" | "SUPERSEDED";
+export type ReportStatus = "DRAFT" | "IN_REVIEW" | "FINAL" | "SUPERSEDED" | "ARCHIVED";
+export type ReportType = "MANUAL" | "AI_ASSISTED" | "HYBRID";
+export type BlockProvenanceKind = "human" | "ai" | "ai_edited";
+
+export interface BlockProvenance {
+  kind: BlockProvenanceKind;
+  refs: Array<{ entity_type?: string; entity_id?: string; label?: string }>;
+}
+
+export interface DocumentBlock {
+  id: string;
+  type: "paragraph" | "heading" | "list" | "table" | "quote" | "page_break";
+  text?: string | null;
+  attrs?: Record<string, unknown>;
+  items?: string[];
+  head?: string[];
+  rows?: string[][];
+  provenance?: BlockProvenance;
+}
 export type AnalysisRunStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
 export type SignalType = "RULE" | "ANOMALY" | "TEMPORAL" | "CROSS_SOURCE" | "NETWORK";
 export type SeverityLevel = "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
@@ -481,6 +502,23 @@ export interface InvestigationTimeline {
   timeline: TimelineEvent[];
 }
 
+export type TimelineEventType =
+  | "MANUAL"
+  | "MEETING"
+  | "INTERVIEW"
+  | "SEARCH"
+  | "OBSERVATION"
+  | "COMMUNICATION"
+  | "LAB_RESULT"
+  | "OTHER";
+
+export interface TimelineEntryBody {
+  occurred_at: IsoString | string;
+  event_type?: TimelineEventType | string | null;
+  summary: string;
+  source?: string | null;
+}
+
 // --- Evidence -----------------------------------------------------------------
 export interface EvidenceIntegrity {
   algorithm: string;
@@ -738,10 +776,18 @@ export interface ReportItem {
   investigation_id: Uuid;
   version: number;
   title: string;
+  report_type: ReportType | string;
   status: ReportStatus | string;
   purpose: string | null;
   outcome: string | null;
   sections: ReportSections;
+  blocks: DocumentBlock[];
+  draft?: DocumentBlock[];
+  draft_saved_at?: string | null;
+  published_at?: string | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ReportList {
@@ -754,6 +800,7 @@ export interface ReportCreateBody {
   purpose?: string | null;
   outcome?: string | null;
   unresolved_questions?: string[] | null;
+  report_type?: ReportType | null;
 }
 
 export interface ReportPatchBody {
@@ -761,6 +808,12 @@ export interface ReportPatchBody {
   purpose?: string | null;
   outcome?: string | null;
   unresolved_questions?: string[] | null;
+}
+
+export interface ReportDocumentBody {
+  blocks: DocumentBlock[];
+  title?: string | null;
+  autosave?: boolean;
 }
 
 // --- AI -------------------------------------------------------------------------
@@ -780,6 +833,13 @@ export interface AiResponse {
 
 export interface SignalExplainBody {
   signal_type?: string;
+}
+
+export interface AiSectionResponse {
+  section: string;
+  label: string;
+  provider: string;
+  blocks: DocumentBlock[];
 }
 
 // --- Intelligence ----------------------------------------------------------------
@@ -812,8 +872,33 @@ export interface IntelligenceSource {
   source_type: string;
   reliability_default: string;
   confidentiality: string;
-  name: string;
+  name: string | null;
   is_active: boolean;
+}
+
+export interface IntelligenceSourceOption extends IntelligenceSource {
+  external_ref: string | null;
+}
+
+export interface IntelligenceSourceList {
+  count: number;
+  limit: number;
+  offset: number;
+  sources: IntelligenceSourceOption[];
+}
+
+export interface IntelCreateBody {
+  source_id: Uuid;
+  title: string;
+  description?: string | null;
+  subject_type?: string | null;
+  subject_id?: Uuid | null;
+  report_date?: string | null;
+  reliability?: string | null;
+  information_quality?: string | null;
+  confidentiality?: string | null;
+  status?: string | null;
+  info_category?: string | null;
 }
 
 export interface IntelDetail extends IntelListItem {
@@ -941,6 +1026,137 @@ export interface SupportPersonList {
 }
 
 // --- Relationships ------------------------------------------------------------------
+export type RelationshipEntityType =
+  | "ATHLETE"
+  | "SUPPORT_PERSON"
+  | "TEAM"
+  | "ORGANIZATION"
+  | "PROVIDER"
+  | "SUPPLEMENT"
+  | "EVENT"
+  | "COMPETITION"
+  | "LOCATION"
+  | "SOURCE";
+
+export type GraphRole =
+  | "ATHLETE" | "COACH" | "TRAINER" | "MEDICAL_PROFESSIONAL" | "MANAGER"
+  | "AGENT" | "SUPPLIER" | "FEDERATION_OFFICIAL" | "TEAM" | "PROVIDER"
+  | "EVENT" | "SOURCE" | "LOCATION" | "ORGANIZATION";
+
+export interface NodeFeature {
+  id: Uuid;
+  entity_type: string;
+  entity_id: Uuid;
+  graph_role: string | null;
+  verification: string | null;
+  notes: string | null;
+  position_x: number | null;
+  position_y: number | null;
+  created_at: IsoString;
+}
+
+export interface NodeFeaturesResponse {
+  count: number;
+  features: NodeFeature[];
+}
+
+export interface RoleListResponse {
+  count: number;
+  roles: string[];
+}
+
+export interface NodeDetail {
+  id: Uuid;
+  entity_type: string;
+  name: string;
+  external_ref: string | null;
+  graph_role: string | null;
+  verification: string | null;
+  degree: number;
+  relationships: Array<{
+    id: Uuid;
+    relationship_type: string;
+    other_entity_type: string;
+    other_entity_id: Uuid;
+    other_name: string;
+    confidence: number | null;
+  }>;
+  intel_count: number;
+  investigation_count: number;
+}
+
+export interface RelationshipDetail {
+  id: Uuid;
+  relationship_type: string;
+  from_entity_type: string;
+  from_entity_id: Uuid;
+  from_name: string | null;
+  from_role: string | null;
+  to_entity_type: string;
+  to_entity_id: Uuid;
+  to_name: string | null;
+  to_role: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  confidence: number | null;
+  frequency: string | null;
+  notes: string | null;
+  verification: string;
+  status: string;
+  deleted: boolean;
+  source_id: Uuid | null;
+  metadata: Record<string, unknown> | null;
+  provenance: {
+    source: { id: Uuid; name: string; source_type: string; reliability_default: string } | null;
+    created_by_actor: { id: Uuid; name: string } | null;
+    created_at: string | null;
+  } | null;
+  related_intel: { count: number; titles: string[] };
+  related_timeline: { count: number };
+  related_investigations: Array<{ id: Uuid; case_ref: string; title: string; status: string }>;
+  created_at: IsoString;
+  updated_at: IsoString;
+}
+
+export interface RelationshipDetailList {
+  count: number;
+  relationships: RelationshipDetail[];
+}
+
+export interface NodeCreateBody {
+  entity_type: string;
+  name: string;
+  external_ref?: string;
+  graph_role?: string;
+  sport?: string;
+  country?: string;
+  city?: string;
+  event_type?: string;
+  start_date?: string;
+  end_date?: string;
+  location?: string;
+  level?: string;
+  source_type?: string;
+  reliability?: string;
+}
+
+export interface RelationshipUpdateBody {
+  relationship_type?: string;
+  confidence?: number;
+  start_date?: string | null;
+  end_date?: string | null;
+  frequency?: string;
+  notes?: string;
+  verification?: string;
+  source_id?: string;
+}
+
+export interface NodeUpdateBody {
+  graph_role?: string;
+  verification?: string;
+  notes?: string;
+}
+
 export interface RelationshipItem {
   id: Uuid;
   relationship_type: string;
@@ -958,6 +1174,43 @@ export interface RelationshipItem {
   created_at: IsoString;
 }
 
+export interface RelationshipTypeSummary {
+  name: string;
+  description: string | null;
+}
+
+export interface RelationshipTypeList {
+  count: number;
+  types: RelationshipTypeSummary[];
+}
+
+export interface RelationshipCreateBody {
+  from_entity_type: RelationshipEntityType | SubjectType | string;
+  from_entity_id: Uuid;
+  to_entity_type: RelationshipEntityType | SubjectType | string;
+  to_entity_id: Uuid;
+  relationship_type: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  confidence?: number | null;
+  source_id?: Uuid | null;
+  frequency?: string;
+  notes?: string;
+  verification?: string;
+}
+
+export interface SubjectOption {
+  id: Uuid;
+  label: string;
+  external_ref: string | null;
+}
+
+export interface SubjectOptionsList {
+  entity_type: string;
+  count: number;
+  options: SubjectOption[];
+}
+
 export interface RelationshipList {
   count: number;
   limit: number;
@@ -969,6 +1222,9 @@ export interface RelationshipParams {
   entity_type?: SubjectType | string;
   entity_id?: Uuid;
   relationship_type?: string;
+  verification?: string;
+  confidence_min?: number;
+  include_deleted?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -1005,4 +1261,329 @@ export interface SupportPersonListParams {
 export interface AnalysisRunParams {
   limit?: number;
   status?: string | null;
+}
+
+// --- Import gate (checkpoint 1005) ------------------------------------------
+export type ImportStatus =
+  | "" | "UPLOADED" | "PARSED" | "VALIDATED" | "COMMITTED" | "PARTIAL" | "FAILED" | "CANCELED";
+
+export type ImportRowStatus =
+  | "READY" | "REVIEW" | "DUPLICATE" | "INVALID" | "IMPORTED" | "REJECTED";
+
+export interface ImportEntityMatch {
+  subject_type: string;
+  subject_id: string;
+  label: string;
+  method: "EXACT_REF" | "EXACT_NAME";
+}
+
+export interface ImportSummary {
+  total: number;
+  ready: number;
+  review: number;
+  duplicates: number;
+  invalid: number;
+  imported: number;
+  rejected: number;
+  parsing_warnings?: string[];
+}
+
+export interface DataImportItem {
+  id: Uuid;
+  name: string;
+  target: string;
+  source_kind: "FILE" | "PASTE";
+  format: string;
+  source_filename: string | null;
+  file_hash: string | null;
+  file_size: number;
+  sheet_name: string | null;
+  columns: string[];
+  sheets: string[];
+  structure: string;
+  status: ImportStatus;
+  progress: number;
+  column_mapping: Record<string, string>;
+  mappable_fields: string[];
+  inferred_types: Record<string, string>;
+  summary: ImportSummary;
+  error_message: string | null;
+  created_at: string | null;
+  validated_at: string | null;
+  committed_at: string | null;
+  canceled_at: string | null;
+  created_by: Uuid | null;
+  preview?: ImportRowItem[];
+}
+
+export interface ImportRowItem {
+  row_number: number;
+  status: ImportRowStatus;
+  original: Record<string, unknown>;
+  normalized: Record<string, unknown>;
+  errors: string[];
+  warnings: string[];
+  dedupe_key: string | null;
+  entity_match: ImportEntityMatch | null;
+  report_id: Uuid | null;
+}
+
+export interface ImportListParams {
+  status?: ImportStatus;
+  q?: string;
+  own_only?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ImportList {
+  count: number;
+  limit: number;
+  offset: number;
+  imports: DataImportItem[];
+}
+
+export interface ImportRowsPage {
+  count: number;
+  limit: number;
+  offset: number;
+  import_id: Uuid;
+  rows: ImportRowItem[];
+}
+
+export interface PasteImportRequest {
+  name: string;
+  content: string;
+}
+
+// --- OSINT gate (checkpoint 1006) ------------------------------------------
+export type OsintHealth = "ACTIVE" | "DEGRADED" | "FAILED" | "RATE_LIMITED" | "DISABLED";
+export type OsintAuthority =
+  | "OFFICIAL" | "PUBLIC_NEWS" | "PUBLIC_SOCIAL" | "ARCHIVAL" | "COMMERCIAL";
+export type OsintClaimVerification =
+  | "UNREVIEWED" | "REVIEWED" | "CORROBORATED" | "DISPUTED" | "REJECTED" | "PROMOTED_TO_EVIDENCE";
+
+export interface OsintConnectorInfo {
+  connector_type: string;
+  source_kind: string | null;
+  search_driven: boolean;
+}
+
+export interface OsintConnectorList {
+  count: number;
+  connectors: OsintConnectorInfo[];
+}
+
+export interface OsintSourceItem {
+  id: string;
+  source_id: string;
+  name: string;
+  connector_type: string;
+  url: string;
+  authority: OsintAuthority | string;
+  jurisdiction: string | null;
+  enabled: boolean;
+  poll_frequency_min: number | null;
+  rate_limit_per_min: number;
+  health: OsintHealth | string;
+  consecutive_failures: number;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  last_failure_reason: string | null;
+  connector_kind: string | null;
+}
+
+export interface OsintSourceList {
+  count: number;
+  limit: number;
+  offset: number;
+  sources: OsintSourceItem[];
+}
+
+export interface OsintSourceHealth {
+  source_id: string;
+  source_ref: string;
+  health: OsintHealth | string;
+  consecutive_failures: number;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  last_failure_reason: string | null;
+  enabled: boolean;
+}
+
+export interface OsintSourceCreateBody {
+  source_id: string;
+  name: string;
+  connector_type: string;
+  url: string;
+  authority?: OsintAuthority | string;
+  jurisdiction?: string | null;
+  enabled?: boolean;
+  poll_frequency_min?: number | null;
+  rate_limit_per_min?: number;
+  extra_config?: Record<string, unknown> | null;
+}
+
+export interface OsintSourcePatchBody {
+  name?: string;
+  url?: string;
+  authority?: OsintAuthority | string;
+  jurisdiction?: string | null;
+  enabled?: boolean;
+  poll_frequency_min?: number | null;
+  rate_limit_per_min?: number;
+  extra_config?: Record<string, unknown> | null;
+}
+
+export interface OsintMention {
+  id: string;
+  subject_type: string;
+  subject_id: string;
+  subject_label: string;
+  match_kind: "EXACT" | "CONTAINS";
+}
+
+export interface OsintClaimItem {
+  id: string;
+  record_id: string | null;
+  subject_type: string | null;
+  subject_id: string | null;
+  subject_label: string | null;
+  predicate: string;
+  object_value: string;
+  confidence: number | null;
+  verification: OsintClaimVerification | string;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+}
+
+export interface OsintRecordItem {
+  id: string;
+  source_id: string;
+  source: string;
+  source_type: string;
+  authority_level: OsintAuthority | string;
+  title: string;
+  publisher: string | null;
+  author: string | null;
+  source_url: string | null;
+  canonical_url: string | null;
+  published_at: string | null;
+  retrieved_at: string;
+  content_hash: string | null;
+  language: string | null;
+  jurisdiction: string | null;
+  extraction_method: string;
+  is_duplicate: boolean;
+  duplicate_reason: string | null;
+  duplicate_of: string | null;
+  syndication_group: string | null;
+  terms_matched: boolean;
+}
+
+export interface OsintRecordList {
+  count: number;
+  limit: number;
+  offset: number;
+  records: OsintRecordItem[];
+}
+
+export type OsintRecordDetail = Omit<OsintRecordItem, "source"> & {
+  source: OsintSourceItem;
+  content: string | null;
+  mentions: OsintMention[];
+  claims: OsintClaimItem[];
+  promoted_reports: number;
+};
+
+export interface OsintDedupeCluster {
+  record_id: string;
+  syndication_group: string | null;
+  member_count: number;
+  independent_sources: number;
+  publishers: string[];
+  members: OsintRecordItem[];
+}
+
+export interface OsintCollectSummary {
+  source_id: string;
+  source_name: string;
+  health: OsintHealth | string;
+  ok: boolean;
+  error: string | null;
+  new_records: number;
+  duplicates: number;
+  mentions: number;
+  stored: Array<{ id: string; title: string; duplicate: boolean; reason: string | null }>;
+  elapsed_ms?: number;
+}
+
+export interface OsintCollectResponse extends OsintCollectSummary {
+  requested_by: string;
+  requested_at: string;
+}
+
+export interface OsintTargetedResponse {
+  terms: string;
+  requested_by: string;
+  requested_at: string;
+  sources_run: number;
+  results: OsintCollectSummary[];
+}
+
+export interface OsintCollectBody {
+  terms?: string | null;
+  days?: number | null;
+  max_records?: number;
+}
+
+export interface OsintTargetedBody {
+  terms: string;
+  days?: number | null;
+  max_records?: number;
+  source_ids?: string[] | null;
+}
+
+export interface OsintRecordParams {
+  source_id?: string;
+  q?: string;
+  authority?: string;
+  date_from?: string;
+  date_to?: string;
+  include_duplicates?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface OsintPromoteBody {
+  subject_type?: string | null;
+  subject_id?: string | null;
+  confidence?: number | null;
+}
+
+export interface OsintPromoteResponse {
+  ok: boolean;
+  report_id: string;
+  osint_record_id: string;
+  title: string;
+  source_id: string;
+}
+
+export interface OsintClaimCreateBody {
+  subject_type?: string | null;
+  subject_id?: string | null;
+  subject_label?: string | null;
+  predicate: string;
+  object_value: string;
+  confidence?: number | null;
+  notes?: string | null;
+}
+
+export interface OsintClaimReviewBody {
+  verification: OsintClaimVerification | string;
+  notes?: string | null;
+  confidence?: number | null;
 }

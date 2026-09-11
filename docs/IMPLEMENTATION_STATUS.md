@@ -130,6 +130,28 @@ synthetic data (directive §65, §68).
 | Password reset (request + redeem) | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | +12 backend, Playwright | `forgot-password` neutral/anti-enum + hashed single-use 30-min tokens (migration 0004); `reset-password` one-time redeem; dev-only `dev_reset_token` echo |
 | Auth pages (Login/Signup/Forgot/Reset + AuthShell transitions) | VERIFIED | - | IMPLEMENTED | - | Vitest + Playwright | `?reset=1` banner; lazy routes `/signup`, `/forgot-password`, `/reset-password` |
 
+## Imports (gate 1005)
+
+| Feature | Status | Backend | Frontend | Database | Tests | Notes |
+|---|---|---|---|---|---|---|
+| Data import pipeline (upload/paste, format detection, column mapping, row validation, commit) | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | API tests + 4 Vitest | Format detected from content; exact entity matching; explicit commit; backend + page + tests green |
+
+## OSINT (gate 1006)
+
+| Feature | Status | Backend | Frontend | Database | Tests | Notes |
+|---|---|---|---|---|---|---|
+| Connector abstraction (GDELT / generic RSS / generic web_doc) | TESTED | IMPLEMENTED | - | - | - | search-driven vs pull; stub connector for test matrix |
+| Source registry + authority + rate limiting | TESTED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | 25 backend tests | 5 real default sources (config only, none fabricated); per-source token-window limiter |
+| Source health (ACTIVE/DEGRADED/FAILED/RATE_LIMITED/DISABLED) | TESTED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | backend tests | recovery DEGRADED→ACTIVE |
+| Raw records + provenance + content hash | TESTED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | backend tests | §49 fields, extracted content, SHA-256 |
+| Dedupe + syndication clustering | TESTED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | backend tests | content-hash/canonical-URL/syndication; `independent_sources` honest |
+| Targeted collection + per-source collect | TESTED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | backend + Vitest | terms/lookback/source_ids/max_records |
+| Claims (subject/predicate/object) + verification | TESTED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | backend tests | osint:admin; CORROBORATED/DISPUTED/etc |
+| Promote to intelligence (intelligence:create) | TESTED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | backend + Vitest | provenance fields in `intel_summary`; audit |
+| RBAC (osint:read/collect/admin) | TESTED | IMPLEMENTED | IMPLEMENTED | - | backend + Vitest | 401s enforced; UI mirrors |
+| OSINT page (/osint) | VERIFIED | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | 5 Vitest + build | collect, registry, records, detail, promote, claims, dedupe |
+| Docs (`OSINT_ARCHITECTURE.md`, `VERITY_OSINT_REGISTER.md`) | IMPLEMENTED | - | - | - | - | migration 0009; journal entry |
+
 ## QA & Docs (STAGE J)
 
 | Feature | Status | Backend | Frontend | Database | Tests | Notes |

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_permissions
+from app.api.deps import require_any_permission, require_permissions
 from app.db.session import get_db
 from app.models.analytics import Alert
 from app.models.events import (
@@ -27,7 +27,18 @@ from app.models.events import (
 )
 from app.models.investigations import Investigation
 from app.models.intelligence import IntelligenceReport
-from app.models.subjects import Athlete, SupportPerson
+from app.models.subjects import (
+    Athlete,
+    Competition,
+    Event,
+    Location,
+    Organization,
+    Provider,
+    Source,
+    Supplement,
+    SupportPerson,
+    Team,
+)
 from app.security.rbac import Permissions
 from app.services.domain_reads import (
     athlete_relationships,
@@ -38,6 +49,24 @@ from app.services.domain_reads import (
 router = APIRouter(tags=["subjects"])
 
 _READ = [Depends(require_permissions(Permissions.ATHLETES_READ))]
+_OPTIONS_READ = [Depends(require_any_permission([
+    Permissions.ATHLETES_READ,
+    Permissions.INTELLIGENCE_READ,
+    Permissions.INVESTIGATIONS_READ,
+]))]
+
+_OPTION_MODELS = {
+    "ATHLETE": Athlete,
+    "SUPPORT_PERSON": SupportPerson,
+    "TEAM": Team,
+    "ORGANIZATION": Organization,
+    "PROVIDER": Provider,
+    "SUPPLEMENT": Supplement,
+    "EVENT": Event,
+    "COMPETITION": Competition,
+    "LOCATION": Location,
+    "SOURCE": Source,
+}
 
 
 def _paginate(limit: int, offset: int) -> tuple[int, int]:
@@ -511,5 +540,62 @@ def support_person_intelligence(person_id: uuid.UUID, db: Session = Depends(get_
                 "confidentiality": r.confidentiality,
             }
             for r in rows
+        ],
+    }
+
+
+@router.get("/subjects/options", dependencies=_OPTIONS_READ, summary="Entity picker options for a subject type")
+def subject_options(
+    entity_type: Annotated[str, Query(description="One of ATHLETE/SUPPORT_PERSON/TEAM/ORGANIZATION/PROVIDER/SUPPLEMENT/EVENT/COMPETITION/LOCATION/SOURCE")],
+    q: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Lightweight id+label options per entity type for relationship pickers.
+
+    Labels are the entity name (or first+last name for persons); the external ref
+    is included as a stable display/key helper. Validation of the relationship
+    itself happens on the create endpoint — these options only drive the form.
+    """
+    kind = entity_type.upper()
+    model = _OPTION_MODELS.get(kind)
+    if model is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Unsupported entity type; expected one of ATHLETE/SUPPORT_PERSON/TEAM/ORGANIZATION/PROVIDER/SUPPLEMENT/EVENT/COMPETITION/LOCATION/SOURCE",
+        )
+    limit = min(max(limit, 1), 200)
+    stmt = select(model)
+    if q:
+        like = f"%{q.strip()}%"
+        if kind == "ATHLETE":
+            stmt = stmt.where(
+                or_(Athlete.first_name.ilike(like), Athlete.last_name.ilike(like), Athlete.external_ref.ilike(like))
+            )
+        else:
+            stmt = stmt.where(or_(model.name.ilike(like), model.external_ref.ilike(like)))
+    if kind == "ATHLETE":
+        stmt = stmt.order_by(Athlete.last_name, Athlete.first_name)
+    else:
+        stmt = stmt.order_by(model.name)
+    rows = db.scalars(stmt.limit(limit)).all()
+
+    def _label(row) -> str:
+        name = getattr(row, "name", None)
+        if name:
+            return str(name)
+        full = f"{getattr(row, 'first_name', '') or ''} {getattr(row, 'last_name', '') or ''}".strip()
+        return full or (getattr(row, "external_ref", None) or str(row.id))
+
+    return {
+        "entity_type": kind,
+        "count": len(rows),
+        "options": [
+            {
+                "id": str(row.id),
+                "label": _label(row),
+                "external_ref": getattr(row, "external_ref", None),
+            }
+            for row in rows
         ],
     }

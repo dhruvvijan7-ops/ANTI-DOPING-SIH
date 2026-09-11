@@ -1,6 +1,8 @@
 // Display metadata for backend enumerations and state machines.
 // Colors must never be the only signal: every badge also carries a label.
 
+export const LIST_LIMIT = 200;
+
 export const PRIORITY_META: Record<
   string,
   { label: string; badge: string; bar: string; rank: number }
@@ -104,8 +106,16 @@ export const VALIDITY_META: Record<string, { label: string; badge: string }> = {
 
 export const REPORT_STATUS_META: Record<string, { label: string; badge: string }> = {
   DRAFT: { label: "Draft", badge: "bg-ink-100 text-ink-700 ring-ink-200" },
+  IN_REVIEW: { label: "In review", badge: "bg-amber-50 text-amber-800 ring-amber-200" },
   FINAL: { label: "Final", badge: "bg-emerald-50 text-emerald-800 ring-emerald-200" },
   SUPERSEDED: { label: "Superseded", badge: "bg-ink-100 text-ink-500 ring-ink-200" },
+  ARCHIVED: { label: "Archived", badge: "bg-ink-100 text-ink-500 ring-ink-200" },
+};
+
+export const REPORT_TYPE_META: Record<string, { label: string }> = {
+  MANUAL: { label: "Manual" },
+  AI_ASSISTED: { label: "AI-assisted" },
+  HYBRID: { label: "Hybrid" },
 };
 
 export const RUN_STATUS_META: Record<string, { label: string; badge: string }> = {

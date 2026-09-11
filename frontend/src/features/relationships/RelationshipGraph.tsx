@@ -1,111 +1,179 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  type Node,
+  type Edge,
+  type NodeTypes,
+  type EdgeTypes,
+  type OnNodeDrag,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import type { RelationshipGraph as Graph } from "@/lib/api/types";
+import { useUpdateNodePositionMutation, useNodeDetailQuery, useRelationshipDetailQuery } from "@/lib/api/queries";
+import { EntityNode } from "./EntityNode";
+import { RelationshipEdge } from "./RelationshipEdge";
+import { NodeDetailPanel } from "./NodeDetailPanel";
+import { EdgeDetailPanel } from "./EdgeDetailPanel";
 
-interface Placed {
-  id: string;
-  label: string;
-  kind: string;
-  is_subject: boolean;
-  x: number;
-  y: number;
-}
-
-const COLORS: Record<string, string> = {
+const NODE_COLORS: Record<string, string> = {
   ATHLETE: "#14243a",
   SUPPORT_PERSON: "#0e7490",
+  TEAM: "#0f766e",
   ORGANIZATION: "#7c2d12",
+  PROVIDER: "#6b21a8",
+  SUPPLEMENT: "#a16207",
+  EVENT: "#b91c1c",
+  COMPETITION: "#dc2626",
+  LOCATION: "#15803d",
+  SOURCE: "#4338ca",
   default: "#64748b",
 };
 
-function layout(graph: Graph, size = { w: 760, h: 440 }): Placed[] {
-  const cx = size.w / 2;
-  const cy = size.h / 2;
-  if (graph.nodes.length === 1) {
-    const only = graph.nodes[0]!;
-    return [{ id: only.id, label: only.label, kind: only.kind, is_subject: Boolean(only.is_subject), x: cx, y: cy }];
-  }
-  const subject = graph.nodes.find((n) => n.is_subject);
-  const others = graph.nodes.filter((n) => !n.is_subject);
-  const positions: Placed[] = [];
-  if (subject) {
-    positions.push({ id: subject.id, label: subject.label, kind: subject.kind, is_subject: true, x: cx, y: cy });
-  }
-  const radius = Math.min(size.w, size.h) * 0.36;
-  others.forEach((node, i) => {
-    const angle = (i / others.length) * 2 * Math.PI - Math.PI / 2;
-    positions.push({
-      id: node.id,
-      label: node.label,
-      kind: node.kind,
-      is_subject: Boolean(node.is_subject),
-      x: cx + radius * Math.cos(angle),
-      y: cy + radius * Math.sin(angle),
-    });
-  });
-  if (!subject) {
-    // No subject flagged: spread available nodes evenly.
-    if (positions.length === 0) {
-      return [];
-    }
-    return positions.map((p, i) => ({
-      ...p,
-      x: cx + radius * Math.cos((i / positions.length) * 2 * Math.PI),
-      y: cy + radius * Math.sin((i / positions.length) * 2 * Math.PI),
-    }));
-  }
-  return positions;
-}
-
 export function RelationshipGraphView({ graph }: { graph: Graph }) {
-  const placed = useMemo(() => layout(graph), [graph]);
-  const byId = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
+  const updatePosition = useUpdateNodePositionMutation();
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeType, setSelectedNodeType] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
-  if (placed.length === 0) {
-    return <p className="py-10 text-center text-sm text-ink-500">No relationships to display.</p>;
+  const { data: nodeDetail } = useNodeDetailQuery(selectedNodeType ?? undefined, selectedNodeId ?? undefined);
+  const { data: edgeDetail } = useRelationshipDetailQuery(selectedEdgeId ?? undefined);
+
+  const initialNodes: Node[] = useMemo(
+    () =>
+      graph.nodes.map((n) => ({
+        id: `${n.kind}:${n.id}`,
+        position: { x: 0, y: 0 },
+        data: {
+          label: n.label,
+          kind: n.kind,
+          entityId: n.id,
+          isSubject: n.is_subject,
+          color: NODE_COLORS[n.kind] ?? NODE_COLORS.default,
+        },
+        type: "entityNode",
+      })),
+    [graph]
+  );
+
+  const initialEdges: Edge[] = useMemo(
+    () =>
+      graph.edges.map((e) => ({
+        id: e.id,
+        source: `${graph.nodes.find((n) => n.id === e.source)?.kind ?? "UNKNOWN"}:${e.source}`,
+        target: `${graph.nodes.find((n) => n.id === e.target)?.kind ?? "UNKNOWN"}:${e.target}`,
+        label: e.label.replaceAll("_", " "),
+        data: {
+          confidence: e.data.confidence,
+          relationshipType: e.data.relationship_type,
+          relationshipId: e.data.relationship_id,
+          startDate: e.data.start_date,
+          endDate: e.data.end_date,
+        },
+        type: "relationshipEdge",
+        animated: e.data.confidence < 0.5,
+      })),
+    [graph]
+  );
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  useEffect(() => {
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialNodes, initialEdges, setNodes, setEdges]);
+
+  const nodeTypes: NodeTypes = useMemo(() => ({ entityNode: EntityNode }), []);
+  const edgeTypes: EdgeTypes = useMemo(() => ({ relationshipEdge: RelationshipEdge }), []);
+
+  const onNodeDragStop: OnNodeDrag = useCallback(
+    (_, node) => {
+      const [entityType, ...idParts] = node.id.split(":");
+      const entityId = idParts.join(":");
+      if (entityType && entityId) {
+        updatePosition.mutate({
+          entityType,
+          entityId,
+          body: { x: node.position.x, y: node.position.y },
+        });
+      }
+    },
+    [updatePosition]
+  );
+
+  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setSelectedEdgeId(null);
+    const [kind, ...idParts] = node.id.split(":");
+    setSelectedNodeType(kind ?? null);
+    setSelectedNodeId(idParts.join(":"));
+  }, []);
+
+  const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+    setSelectedNodeId(null);
+    setSelectedNodeType(null);
+    setSelectedEdgeId((edge.data?.relationshipId as string) ?? null);
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedNodeType(null);
+    setSelectedEdgeId(null);
+  }, []);
+
+  if (graph.nodes.length === 0) {
+    return null;
   }
-
-  const edgeLabel = (label: string) => label.replaceAll("_", " ");
 
   return (
-    <svg viewBox="0 0 760 440" role="img" aria-label="Relationship graph" className="h-auto w-full rounded-md border border-ink-100 bg-white">
-      <defs>
-        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8" />
-        </marker>
-      </defs>
-      {graph.edges.map((edge) => {
-        const s = byId.get(edge.source);
-        const t = byId.get(edge.target);
-        if (!s || !t) return null;
-        const mx = (s.x + t.x) / 2;
-        const my = (s.y + t.y) / 2 - 14;
-        return (
-          <g key={edge.id}>
-            <line x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="#cbd5e1" strokeWidth={1.5} markerEnd="url(#arrowhead)" />
-            <text x={mx} y={my} textAnchor="middle" className="fill-ink-500 text-[10px]">
-              {edgeLabel(edge.label)}
-            </text>
-          </g>
-        );
-      })}
-      {placed.map((node) => {
-        const color = COLORS[node.kind] ?? COLORS.default;
-        return (
-          <g key={node.id} transform={`translate(${node.x} ${node.y})`}>
-            <circle r={node.is_subject ? 26 : 18} fill={color} stroke="#fff" strokeWidth={2} opacity={node.is_subject ? 1 : 0.85} />
-            <text y={4.5} textAnchor="middle" className="fill-white text-[11px] font-semibold">
-              {node.is_subject ? node.label.slice(0, 1).toUpperCase() : ""}
-            </text>
-            <text
-              y={node.is_subject ? 44 : 34}
-              textAnchor="middle"
-              className={node.is_subject ? "fill-ink-900 text-[11px] font-semibold" : "fill-ink-600 text-[10px]"}
-            >
-              {node.label.length > 22 ? `${node.label.slice(0, 21)}…` : node.label}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
+    <div className="flex gap-4">
+      <div className="relative min-h-[480px] flex-1 rounded-md border border-ink-100 bg-ink-50">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDragStop={onNodeDragStop}
+          onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
+          onPaneClick={onPaneClick}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2 }}
+          minZoom={0.2}
+          maxZoom={3}
+          defaultEdgeOptions={{ type: "relationshipEdge" }}
+        >
+          <Background gap={20} />
+          <Controls />
+          <MiniMap
+            nodeColor={(n) => (n.data as Record<string, unknown>).color as string ?? "#64748b"}
+            maskColor="rgba(255,255,255,0.7)"
+          />
+        </ReactFlow>
+      </div>
+      {selectedNodeId && selectedNodeType ? (
+        <NodeDetailPanel
+          entityType={selectedNodeType}
+          entityId={selectedNodeId}
+          detail={nodeDetail}
+          onClose={() => {
+            setSelectedNodeId(null);
+            setSelectedNodeType(null);
+          }}
+        />
+      ) : null}
+      {selectedEdgeId ? (
+        <EdgeDetailPanel
+          detail={edgeDetail}
+          onClose={() => setSelectedEdgeId(null)}
+        />
+      ) : null}
+    </div>
   );
 }

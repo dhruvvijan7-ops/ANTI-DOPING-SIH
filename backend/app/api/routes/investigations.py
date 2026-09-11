@@ -47,6 +47,7 @@ from app.models.investigations import (
     Investigation,
     InvestigationNote,
     InvestigationTask,
+    TimelineEvent,
 )
 from app.models.relationships import EntityRelationship
 from app.models.subjects import Athlete, Organization, Provider, Supplement, SupportPerson, Team
@@ -125,6 +126,16 @@ class TaskPatchBody(BaseModel):
 
 class NoteBody(BaseModel):
     content: str
+
+
+class TimelineEventBody(BaseModel):
+    """Manual reconstruction entry: the analyst names the moment and the source it
+    is based on. Categorised but not engine-derived (see directive §784/§800)."""
+
+    occurred_at: datetime
+    event_type: str = "MANUAL"
+    summary: str
+    source: str | None = None
 
 
 class FindingBody(BaseModel):
@@ -540,6 +551,20 @@ def investigation_timeline(investigation_id: uuid.UUID, db: Session = Depends(ge
             "summary": n.content,
         })
 
+    for t in db.scalars(
+        select(TimelineEvent).where(TimelineEvent.investigation_id == inv.id)
+    ).all():
+        entries.append({
+            "event_type": t.event_type,
+            "occurred_at": t.occurred_at.isoformat() if t.occurred_at else None,
+            "source": t.source or "CASE WORK",
+            "related_entity": str(inv.subject_id),
+            "relevance": "CONTEXT",
+            "record_id": str(t.id),
+            "origin": "timeline_events",
+            "summary": t.summary,
+        })
+
     for alert in inv.alerts:
         entries.append({
             "event_type": "ALERT",
@@ -554,6 +579,54 @@ def investigation_timeline(investigation_id: uuid.UUID, db: Session = Depends(ge
 
     entries.sort(key=lambda e: e["occurred_at"] or "")
     return {"count": len(entries), "timeline": entries}
+
+
+@router.post("/investigations/{investigation_id}/timeline", dependencies=[Depends(require_permissions(Permissions.INVESTIGATIONS_MODIFY))])
+def add_timeline_event(
+    investigation_id: uuid.UUID,
+    body: TimelineEventBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Manually place an event on the case timeline (reconstruction tool)."""
+    inv = _get_inv(db, investigation_id)
+    summary = (body.summary or "").strip()
+    if not summary:
+        raise HTTPException(status_code=422, detail="Timeline entry requires a summary")
+    event = TimelineEvent(
+        investigation_id=inv.id,
+        occurred_at=body.occurred_at,
+        event_type=(body.event_type or "MANUAL").upper()[:32],
+        summary=summary[:500],
+        source=(body.source or "").strip()[:255] or None,
+        created_by=user.id,
+    )
+    db.add(event)
+    db.flush()
+    record_audit(
+        db,
+        actor_id=user.id,
+        action="TIMELINE_ENTRY_CREATED",
+        entity_type="TIMELINE_EVENT",
+        entity_id=str(event.id),
+        metadata={
+            "investigation_id": str(inv.id),
+            "event_type": event.event_type,
+            "occurred_at": event.occurred_at.isoformat(),
+        },
+    )
+    db.commit()
+    return {
+        "id": str(event.id),
+        "event_type": event.event_type,
+        "occurred_at": event.occurred_at.isoformat() if event.occurred_at else None,
+        "origin": "timeline_events",
+        "relevance": "CONTEXT",
+        "record_id": str(event.id),
+        "source": event.source,
+        "related_entity": str(inv.subject_id),
+        "summary": event.summary,
+    }
 
 
 # ----------------------------------------------------------------------- evidence
@@ -1131,6 +1204,7 @@ def investigation_audit(investigation_id: uuid.UUID, db: Session = Depends(get_d
         "NOTE": {str(n.id) for n in inv.notes},
         "FINDING": {str(f.id) for f in inv.findings},
         "REPORT": {str(r.id) for r in inv.reports},
+        "TIMELINE_EVENT": {str(t.id) for t in inv.timeline_events},
     }
     alert_ids = {str(a.id) for a in inv.alerts} | (
         {str(inv.originating_alert_id)} if inv.originating_alert_id else set()

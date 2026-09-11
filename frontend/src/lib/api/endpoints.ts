@@ -1,5 +1,6 @@
 // Typed endpoint functions. One-to-one with the backend contract.
-import { api } from "@/lib/api/client";
+import { api, apiUpload, ApiError, API_BASE } from "@/lib/api/client";
+import { useAuthStore } from "@/stores/auth";
 import type {
   AiResponse,
   AlertDetail,
@@ -73,6 +74,7 @@ import type {
   TaskList,
   TaskPatchBody,
   TestRecord,
+  TimelineEvent,
   TimelineMarker,
   TokenResponse,
   TravelEvent,
@@ -81,6 +83,47 @@ import type {
   ForgotPasswordRequest,
   ForgotPasswordResponse,
   ResetPasswordRequest,
+  IntelCreateBody,
+  IntelligenceSourceList,
+  RelationshipCreateBody,
+  RelationshipDetail,
+  RelationshipTypeList,
+  NodeCreateBody,
+  NodeDetail,
+  NodeFeaturesResponse,
+  NodeUpdateBody,
+  RelationshipUpdateBody,
+  RoleListResponse,
+  SubjectOptionsList,
+  TimelineEntryBody,
+  ReportDocumentBody,
+  ReportType,
+  AiSectionResponse,
+  DataImportItem,
+  ImportList,
+  ImportListParams,
+  ImportRowStatus,
+  ImportRowsPage,
+  PasteImportRequest,
+  OsintClaimCreateBody,
+  OsintClaimItem,
+  OsintClaimReviewBody,
+  OsintCollectBody,
+  OsintCollectResponse,
+  OsintConnectorList,
+  OsintDedupeCluster,
+  OsintPromoteBody,
+  OsintPromoteResponse,
+  OsintRecordDetail,
+  OsintRecordList,
+  OsintRecordParams,
+  OsintSourceCreateBody,
+  OsintSourceHealth,
+  OsintSourceItem,
+  OsintSourceList,
+  OsintSourcePatchBody,
+  OsintTargetedBody,
+  OsintTargetedResponse,
 } from "@/lib/api/types";
 
 export const authApi = {
@@ -197,6 +240,8 @@ export const investigationsApi = {
   intelligence: (id: string) =>
     api<{ count: number; intelligence: IntelListItem[] }>(`/investigations/${id}/intelligence`),
   timeline: (id: string) => api<InvestigationTimeline>(`/investigations/${id}/timeline`),
+  timelineEntry: (id: string, body: TimelineEntryBody) =>
+    api<TimelineEvent>(`/investigations/${id}/timeline`, { method: "POST", body }),
   relationships: (id: string, relTypes?: string[]) =>
     api<RelationshipGraph>(`/investigations/${id}/relationships`, {
       params: relTypes?.length ? { rel_type: relTypes } : undefined,
@@ -272,11 +317,70 @@ export const reportsApi = {
       method: "PATCH",
       body,
     }),
+  saveDocument: (investigationId: string, reportId: string, body: ReportDocumentBody) =>
+    api<ReportItem>(`/investigations/${investigationId}/reports/${reportId}/document`, {
+      method: "POST",
+      body,
+    }),
+  aiDraft: (investigationId: string, reportId: string) =>
+    api<ReportItem & { provider?: string }>(`/investigations/${investigationId}/reports/${reportId}/ai-draft`, {
+      method: "POST",
+    }),
+  aiSection: (investigationId: string, reportId: string, body: { section: string }) =>
+    api<AiSectionResponse>(`/investigations/${investigationId}/reports/${reportId}/ai-section`, {
+      method: "POST",
+      body,
+    }),
+  setType: (investigationId: string, reportId: string, reportType: ReportType) =>
+    api<ReportItem>(`/investigations/${investigationId}/reports/${reportId}/type`, {
+      method: "POST",
+      body: { report_type: reportType },
+    }),
+  review: (investigationId: string, reportId: string) =>
+    api<ReportItem>(`/investigations/${investigationId}/reports/${reportId}/review`, {
+      method: "POST",
+    }),
   publish: (investigationId: string, reportId: string) =>
     api<ReportItem>(`/investigations/${investigationId}/reports/${reportId}/publish`, {
       method: "POST",
     }),
+  archive: (investigationId: string, reportId: string) =>
+    api<ReportItem>(`/investigations/${investigationId}/reports/${reportId}/archive`, {
+      method: "POST",
+    }),
 };
+
+export const reportExportApi = {
+  html: (investigationId: string, reportId: string) => downloadFile(reportId, "html", investigationId),
+  docx: (investigationId: string, reportId: string) => downloadFile(reportId, "docx", investigationId),
+  pdf: (investigationId: string, reportId: string) => downloadFile(reportId, "pdf", investigationId),
+};
+
+async function downloadFile(reportId: string, ext: "html" | "docx" | "pdf", investigationId: string): Promise<{ ok: boolean; filename: string }> {
+  const token = useAuthStore.getState().token;
+  const headers: Record<string, string> = { Accept: "application/octet-stream" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(
+    `${API_BASE}/investigations/${investigationId}/reports/${reportId}/export/${ext}`,
+    { headers, credentials: "omit" },
+  );
+  if (!response.ok) {
+    throw new ApiError(response.status, `HTTP_${response.status}`, `Export failed with status ${response.status}`);
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? `report_${reportId}.${ext}`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return { ok: true, filename };
+}
 
 export const aiApi = {
   summary: (investigationId: string) =>
@@ -302,11 +406,53 @@ export const aiApi = {
 export const intelligenceApi = {
   list: (params?: IntelligenceParams) => api<IntelligenceList>("/intelligence/reports", { params }),
   detail: (reportId: string) => api<IntelDetail>(`/intelligence/reports/${reportId}`),
+  sources: (params?: { source_type?: string; limit?: number; offset?: number }) =>
+    api<IntelligenceSourceList>("/intelligence/sources", { params }),
+  createReport: (body: IntelCreateBody) =>
+    api<IntelDetail>("/intelligence/reports", { method: "POST", body }),
 };
 
 export const relationshipsApi = {
   list: (params?: RelationshipParams) => api<RelationshipList>("/relationships", { params }),
-  detail: (relationshipId: string) => api<RelationshipItem>(`/relationships/${relationshipId}`),
+  types: () => api<RelationshipTypeList>("/relationships/types"),
+  create: (body: RelationshipCreateBody) =>
+    api<RelationshipItem>("/relationships", { method: "POST", body }),
+
+  roles: () => api<RoleListResponse>("/relationships/roles"),
+
+  nodeDetail: (entityType: string, entityId: string) =>
+    api<NodeDetail>(`/relationships/nodes/${entityType}/${entityId}`),
+
+  nodeFeatures: () => api<NodeFeaturesResponse>("/relationships/nodes/features"),
+
+  createNode: (body: NodeCreateBody) =>
+    api<{ id: string; entity_type: string; name: string; external_ref: string; graph_role: string; verification: string }>(
+      "/relationships/nodes", { method: "POST", body }
+    ),
+
+  updateNode: (entityType: string, entityId: string, body: NodeUpdateBody) =>
+    api<{ ok: boolean; entity_type: string; entity_id: string; graph_role: string; verification: string }>(
+      `/relationships/nodes/${entityType}/${entityId}`, { method: "PATCH", body }
+    ),
+
+  updateNodePosition: (entityType: string, entityId: string, body: { x: number; y: number }) =>
+    api<{ ok: boolean; x: number; y: number }>(
+      `/relationships/nodes/${entityType}/${entityId}/position`, { method: "PATCH", body }
+    ),
+
+  detail: (relationshipId: string) =>
+    api<RelationshipDetail>(`/relationships/${relationshipId}`),
+
+  update: (relationshipId: string, body: RelationshipUpdateBody) =>
+    api<RelationshipDetail>(`/relationships/${relationshipId}`, { method: "PATCH", body }),
+
+  delete: (relationshipId: string) =>
+    api<{ status: string }>(`/relationships/${relationshipId}`, { method: "DELETE" }),
+};
+
+export const subjectsApi = {
+  options: (params: { entity_type: string; q?: string; limit?: number }) =>
+    api<SubjectOptionsList>("/subjects/options", { params }),
 };
 
 export const athletesApi = {
@@ -330,6 +476,28 @@ export const athletesApi = {
     api<{ count: number; relationships: RelationshipItem[] }>(`/athletes/${athleteId}/relationships`),
 };
 
+export const importsApi = {
+  list: (params?: ImportListParams) => api<ImportList>("/imports", { params }),
+  detail: (importId: string) => api<DataImportItem>(`/imports/${importId}`),
+  rows: (importId: string, params?: { status?: ImportRowStatus; q?: string; limit?: number; offset?: number }) =>
+    api<ImportRowsPage>(`/imports/${importId}/rows`, { params }),
+  upload: (file: File, name?: string) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (name) fd.append("name", name);
+    return apiUpload<DataImportItem>("/imports/upload", fd);
+  },
+  paste: (body: PasteImportRequest) => api<DataImportItem>("/imports/paste", { method: "POST", body }),
+  mapping: (importId: string, body: { mapping?: Record<string, string>; sheet_name?: string | null }) =>
+    api<DataImportItem>(`/imports/${importId}/mapping`, { method: "POST", body }),
+  validate: (importId: string) =>
+    api<DataImportItem>(`/imports/${importId}/validate`, { method: "POST" }),
+  commit: (importId: string, includeStatuses: ImportRowStatus[] = ["READY"]) =>
+    api<DataImportItem>(`/imports/${importId}/commit`, { method: "POST", body: { include_statuses: includeStatuses } }),
+  cancel: (importId: string) =>
+    api<DataImportItem>(`/imports/${importId}/cancel`, { method: "POST" }),
+};
+
 export const supportPersonsApi = {
   list: (params?: SupportPersonListParams) =>
     api<SupportPersonList>("/support-persons", { params }),
@@ -339,4 +507,36 @@ export const supportPersonsApi = {
     api<{ count: number; relationships: RelationshipItem[] }>(`/support-persons/${personId}/relationships`),
   intelligence: (personId: string) =>
     api<{ count: number; reports: AthleteIntelItem[] }>(`/support-persons/${personId}/intelligence`),
+};
+
+export const osintApi = {
+  connectorTypes: () => api<OsintConnectorList>("/osint/connector-types"),
+  sources: (params?: { connector_type?: string; authority?: string; include_disabled?: boolean; limit?: number; offset?: number }) =>
+    api<OsintSourceList>("/osint/sources", { params }),
+  createSource: (body: OsintSourceCreateBody) =>
+    api<OsintSourceItem>("/osint/sources", { method: "POST", body }),
+  updateSource: (sourceId: string, body: OsintSourcePatchBody) =>
+    api<OsintSourceItem>(`/osint/sources/${sourceId}`, { method: "PATCH", body }),
+  deleteSource: (sourceId: string) =>
+    api<{ ok: boolean; id: string }>(`/osint/sources/${sourceId}`, { method: "DELETE" }),
+  sourceHealth: (sourceId: string) =>
+    api<OsintSourceHealth>(`/osint/sources/${sourceId}/health`),
+  seedDefaults: () =>
+    api<{ ok: boolean; sources_total: number; records_total: number }>("/osint/sources/defaults", { method: "POST" }),
+  collectSource: (sourceId: string, body: OsintCollectBody = {}) =>
+    api<OsintCollectResponse>(`/osint/sources/${sourceId}/collect`, { method: "POST", body }),
+  collectTargeted: (body: OsintTargetedBody) =>
+    api<OsintTargetedResponse>("/osint/collect", { method: "POST", body }),
+  records: (params?: OsintRecordParams) =>
+    api<OsintRecordList>("/osint/records", { params }),
+  recordDetail: (recordId: string) =>
+    api<OsintRecordDetail>(`/osint/records/${recordId}`),
+  dedupeCluster: (recordId: string) =>
+    api<OsintDedupeCluster>(`/osint/records/${recordId}/dedupe-cluster`),
+  promote: (recordId: string, body: OsintPromoteBody = {}) =>
+    api<OsintPromoteResponse>(`/osint/records/${recordId}/promote`, { method: "POST", body }),
+  createClaim: (recordId: string, body: OsintClaimCreateBody) =>
+    api<OsintClaimItem>(`/osint/records/${recordId}/claims`, { method: "POST", body }),
+  reviewClaim: (claimId: string, body: OsintClaimReviewBody) =>
+    api<OsintClaimItem>(`/osint/claims/${claimId}`, { method: "PATCH", body }),
 };

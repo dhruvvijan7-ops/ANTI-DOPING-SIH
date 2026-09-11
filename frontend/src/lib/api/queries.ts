@@ -9,11 +9,14 @@ import {
   dashboardApi,
   evidenceApi,
   findingsApi,
+  importsApi,
   intelligenceApi,
   investigationsApi,
   notesApi,
+  osintApi,
   relationshipsApi,
   reportsApi,
+  subjectsApi,
   supportPersonsApi,
   tasksApi,
 } from "@/lib/api/endpoints";
@@ -27,17 +30,36 @@ import type {
   EvidencePatchBody,
   FindingBody,
   FindingPatchBody,
+  IntelCreateBody,
+  ImportListParams,
+  ImportRowStatus,
+  PasteImportRequest,
+  OsintClaimCreateBody,
+  OsintClaimReviewBody,
+  OsintCollectBody,
+  OsintPromoteBody,
+  OsintRecordParams,
+  OsintSourceCreateBody,
+  OsintSourcePatchBody,
+  OsintTargetedBody,
   InvestigationCreateBody,
   InvestigationListParams,
   InvestigationPatchBody,
   NoteBody,
+  NodeCreateBody,
+  NodeUpdateBody,
+  RelationshipCreateBody,
+  RelationshipUpdateBody,
   ReportCreateBody,
   ReportPatchBody,
+  ReportDocumentBody,
+  ReportType,
   RunCreate,
   SignalExplainBody,
   SupportPersonListParams,
   TaskBody,
   TaskPatchBody,
+  TimelineEntryBody,
   IntelligenceParams,
 } from "@/lib/api/types";
 
@@ -160,6 +182,98 @@ export function useConvertAlertMutation(opts?: UseMutationOptions<Awaited<Return
 
 function invalidateMany(qc: QueryClient, keys: string[][]) {
   return Promise.all(keys.map((k) => qc.invalidateQueries({ queryKey: k })));
+}
+
+// --- Imports (gate 1005) ---
+export function useImportsQuery(params?: ImportListParams) {
+  return useQuery({
+    queryKey: ["imports", "list", params],
+    queryFn: () => importsApi.list(params),
+    staleTime: 15_000,
+  });
+}
+
+export function useImportDetailQuery(importId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["imports", importId],
+    queryFn: () => importsApi.detail(importId!),
+    enabled: Boolean(importId) && enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useImportRowsQuery(importId: string, params?: { status?: ImportRowStatus; q?: string; limit?: number; offset?: number }) {
+  return useQuery({
+    queryKey: ["imports", importId, "rows", params],
+    queryFn: () => importsApi.rows(importId, params),
+    staleTime: 15_000,
+  });
+}
+
+export function useUploadImportMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof importsApi.upload>>, unknown, { file: File; name?: string }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, name }) => importsApi.upload(file, name),
+    onSuccess: () => void invalidateMany(qc, [["imports", "list"]]),
+    ...opts,
+  });
+}
+
+export function usePasteImportMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof importsApi.paste>>, unknown, PasteImportRequest>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: importsApi.paste,
+    onSuccess: () => void invalidateMany(qc, [["imports", "list"]]),
+    ...opts,
+  });
+}
+
+export function useImportMappingMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof importsApi.mapping>>, unknown, { importId: string; body: { mapping?: Record<string, string>; sheet_name?: string | null } }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ importId, body }) => importsApi.mapping(importId, body),
+    onSuccess: (_d, v) => void invalidateMany(qc, [["imports", v.importId], ["imports", v.importId, "rows"]]),
+    ...opts,
+  });
+}
+
+export function useImportRevalidateMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof importsApi.validate>>, unknown, { importId: string }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ importId }) => importsApi.validate(importId),
+    onSuccess: (_d, v) => void invalidateMany(qc, [["imports", v.importId], ["imports", v.importId, "rows"]]),
+    ...opts,
+  });
+}
+
+export function useImportCommitMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof importsApi.commit>>, unknown, { importId: string; includeStatuses: ImportRowStatus[] }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ importId, includeStatuses }) => importsApi.commit(importId, includeStatuses),
+    onSuccess: (_d, v) => void invalidateMany(qc, [["imports", "list"], ["imports", v.importId], ["imports", v.importId, "rows"]]),
+    ...opts,
+  });
+}
+
+export function useImportCancelMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof importsApi.cancel>>, unknown, { importId: string }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ importId }) => importsApi.cancel(importId),
+    onSuccess: (_d, v) => void invalidateMany(qc, [["imports", "list"], ["imports", v.importId]]),
+    ...opts,
+  });
 }
 
 // --- Analysis ---
@@ -291,11 +405,160 @@ export function useIntelDetailQuery(reportId?: string) {
   });
 }
 
+export function useIntelligenceSourcesQuery(enabled = true) {
+  return useQuery({
+    queryKey: ["intelligence", "sources"],
+    queryFn: () => intelligenceApi.sources(),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useCreateIntelligenceMutation(opts?: UseMutationOptions<Awaited<ReturnType<typeof intelligenceApi.createReport>>, unknown, IntelCreateBody>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => intelligenceApi.createReport(body),
+    onSuccess: () => {
+      void invalidateMany(qc, [
+        ["intelligence"],
+        ["investigations"],
+        ["dashboard"],
+      ]);
+    },
+    ...opts,
+  });
+}
+
 // --- Relationships ---
 export function useRelationshipsQuery(params?: Parameters<typeof relationshipsApi.list>[0]) {
   return useQuery({
     queryKey: ["relationships", params],
     queryFn: () => relationshipsApi.list(params),
+  });
+}
+
+export function useRelationshipTypesQuery(enabled = true) {
+  return useQuery({
+    queryKey: ["relationships", "types"],
+    queryFn: () => relationshipsApi.types(),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useSubjectOptionsQuery(entityType?: string, q = "", limit = 50) {
+  return useQuery({
+    queryKey: ["subjects", "options", entityType, q],
+    queryFn: () => subjectsApi.options({ entity_type: entityType!, q: q.trim() || undefined, limit }),
+    enabled: Boolean(entityType),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateRelationshipMutation(opts?: UseMutationOptions<Awaited<ReturnType<typeof relationshipsApi.create>>, unknown, RelationshipCreateBody>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => relationshipsApi.create(body),
+    onSuccess: () => {
+      void invalidateMany(qc, [
+        ["investigations"],
+        ["relationships"],
+        ["dashboard"],
+      ]);
+    },
+    ...opts,
+  });
+}
+
+export function useRolesQuery(enabled = true) {
+  return useQuery({
+    queryKey: ["relationships", "roles"],
+    queryFn: () => relationshipsApi.roles(),
+    enabled,
+    staleTime: 300_000,
+  });
+}
+
+export function useNodeFeaturesQuery() {
+  return useQuery({
+    queryKey: ["relationships", "nodes", "features"],
+    queryFn: () => relationshipsApi.nodeFeatures(),
+    staleTime: 60_000,
+  });
+}
+
+export function useNodeDetailQuery(entityType?: string, entityId?: string) {
+  return useQuery({
+    queryKey: ["relationships", "nodes", entityType, entityId],
+    queryFn: () => relationshipsApi.nodeDetail(entityType!, entityId!),
+    enabled: Boolean(entityType && entityId),
+  });
+}
+
+export function useRelationshipDetailQuery(id?: string) {
+  return useQuery({
+    queryKey: ["relationships", "detail", id],
+    queryFn: () => relationshipsApi.detail(id!),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateNodeMutation(opts?: UseMutationOptions<Awaited<ReturnType<typeof relationshipsApi.createNode>>, unknown, NodeCreateBody>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: NodeCreateBody) => relationshipsApi.createNode(body),
+    onSuccess: (...args) => {
+      qc.invalidateQueries({ queryKey: ["relationships"] });
+      opts?.onSuccess?.(...args);
+    },
+  });
+}
+
+export function useUpdateNodeMutation(opts?: UseMutationOptions<Awaited<ReturnType<typeof relationshipsApi.updateNode>>, unknown, { entityType: string; entityId: string; body: NodeUpdateBody }>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ entityType, entityId, body }: { entityType: string; entityId: string; body: NodeUpdateBody }) =>
+      relationshipsApi.updateNode(entityType, entityId, body),
+    onSuccess: (...args) => {
+      qc.invalidateQueries({ queryKey: ["relationships"] });
+      opts?.onSuccess?.(...args);
+    },
+  });
+}
+
+export function useUpdateNodePositionMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ entityType, entityId, body }: { entityType: string; entityId: string; body: { x: number; y: number } }) =>
+      relationshipsApi.updateNodePosition(entityType, entityId, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["relationships", "nodes", "features"] });
+    },
+  });
+}
+
+export function useUpdateRelationshipMutation(opts?: UseMutationOptions<Awaited<ReturnType<typeof relationshipsApi.update>>, unknown, { id: string; body: RelationshipUpdateBody }>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: RelationshipUpdateBody }) =>
+      relationshipsApi.update(id, body),
+    onSuccess: (...args) => {
+      qc.invalidateQueries({ queryKey: ["relationships"] });
+      qc.invalidateQueries({ queryKey: ["investigations"] });
+      opts?.onSuccess?.(...args);
+    },
+  });
+}
+
+export function useDeleteRelationshipMutation(opts?: UseMutationOptions<Awaited<ReturnType<typeof relationshipsApi.delete>>, unknown, string>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => relationshipsApi.delete(id),
+    onSuccess: (...args) => {
+      qc.invalidateQueries({ queryKey: ["relationships"] });
+      qc.invalidateQueries({ queryKey: ["investigations"] });
+      opts?.onSuccess?.(...args);
+    },
   });
 }
 
@@ -338,6 +601,23 @@ export function useInvestigationAuditQuery(id?: string) {
     queryKey: ["investigations", id, "audit"],
     queryFn: () => investigationsApi.audit(id!),
     enabled: Boolean(id),
+  });
+}
+
+export function useCreateTimelineEntryMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof investigationsApi.timelineEntry>>, unknown, { investigationId: string; body: TimelineEntryBody }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ investigationId, body }) => investigationsApi.timelineEntry(investigationId, body),
+    onSuccess: (_d, v) => {
+      void invalidateMany(qc, [
+        ["investigations", v.investigationId, "timeline"],
+        ["investigations", v.investigationId],
+        ["investigations", v.investigationId, "audit"],
+      ]);
+    },
+    ...opts,
   });
 }
 
@@ -625,6 +905,14 @@ export function useReportsQuery(investigationId?: string) {
   });
 }
 
+export function useReportDetailQuery(investigationId?: string, reportId?: string) {
+  return useQuery({
+    queryKey: ["investigations", investigationId, "reports", reportId],
+    queryFn: () => reportsApi.detail(investigationId!, reportId!),
+    enabled: Boolean(investigationId && reportId),
+  });
+}
+
 export function useCreateReportMutation(opts?: UseMutationOptions<Awaited<ReturnType<typeof reportsApi.create>>, unknown, { investigationId: string; body: ReportCreateBody }>) {
   const qc = useQueryClient();
   return useMutation({
@@ -669,6 +957,90 @@ export function useUpdateReportMutation(
   });
 }
 
+export function useSaveReportDocumentMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof reportsApi.saveDocument>>, unknown, { investigationId: string; reportId: string; body: ReportDocumentBody }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ investigationId, reportId, body }) => reportsApi.saveDocument(investigationId, reportId, body),
+    onSuccess: (_d, v) => {
+      void invalidateMany(qc, [
+        ["investigations", v.investigationId, "reports"],
+        ["investigations", v.investigationId, "audit"],
+      ]);
+    },
+    ...opts,
+  });
+}
+
+export function useAiDraftReportMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof reportsApi.aiDraft>>, unknown, { investigationId: string; reportId: string }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ investigationId, reportId }) => reportsApi.aiDraft(investigationId, reportId),
+    onSuccess: (_d, v) => {
+      void invalidateMany(qc, [
+        ["investigations", v.investigationId, "reports"],
+        ["investigations", v.investigationId, "audit"],
+      ]);
+    },
+    ...opts,
+  });
+}
+
+export function useAiSectionReportMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof reportsApi.aiSection>>, unknown, { investigationId: string; reportId: string; section: string }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ investigationId, reportId, section }) => reportsApi.aiSection(investigationId, reportId, { section }),
+    onSuccess: (_d, v) => {
+      void invalidateMany(qc, [["investigations", v.investigationId, "reports"]]);
+    },
+    ...opts,
+  });
+}
+
+export function useSetReportTypeMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof reportsApi.setType>>, unknown, { investigationId: string; reportId: string; reportType: ReportType }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ investigationId, reportId, reportType }) => reportsApi.setType(investigationId, reportId, reportType),
+    onSuccess: (_d, v) => {
+      void invalidateMany(qc, [["investigations", v.investigationId, "reports"]]);
+    },
+    ...opts,
+  });
+}
+
+export function useReviewReportMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof reportsApi.review>>, unknown, { investigationId: string; reportId: string }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ investigationId, reportId }) => reportsApi.review(investigationId, reportId),
+    onSuccess: (_d, v) => {
+      void invalidateMany(qc, [["investigations", v.investigationId, "reports"]]);
+    },
+    ...opts,
+  });
+}
+
+export function useArchiveReportMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof reportsApi.archive>>, unknown, { investigationId: string; reportId: string }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ investigationId, reportId }) => reportsApi.archive(investigationId, reportId),
+    onSuccess: (_d, v) => {
+      void invalidateMany(qc, [["investigations", v.investigationId, "reports"]]);
+    },
+    ...opts,
+  });
+}
+
 // --- AI ---
 export function useAiSummaryQuery(investigationId?: string, enabled = true) {
   return useQuery({
@@ -691,6 +1063,149 @@ export function useAiInformationGapsQuery(investigationId?: string, enabled = tr
 export function useAiSignalExplanationMutation(opts?: UseMutationOptions<Awaited<ReturnType<typeof aiApi.signalExplanation>>, unknown, { investigationId: string; body?: SignalExplainBody }>) {
   return useMutation({
     mutationFn: ({ investigationId, body }) => aiApi.signalExplanation(investigationId, body),
+    ...opts,
+  });
+}
+
+// --- OSINT (gate 1006) ---
+export function useOsintConnectorTypesQuery() {
+  return useQuery({
+    queryKey: ["osint", "connector-types"],
+    queryFn: osintApi.connectorTypes,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useOsintSourcesQuery(params?: { include_disabled?: boolean; limit?: number; offset?: number }) {
+  return useQuery({
+    queryKey: ["osint", "sources", "list", params],
+    queryFn: () => osintApi.sources(params),
+    staleTime: 15_000,
+  });
+}
+
+export function useOsintRecordsQuery(params?: OsintRecordParams, enabled = true) {
+  return useQuery({
+    queryKey: ["osint", "records", "list", params],
+    queryFn: () => osintApi.records(params),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useOsintRecordDetailQuery(recordId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["osint", "records", recordId],
+    queryFn: () => osintApi.recordDetail(recordId!),
+    enabled: Boolean(recordId) && enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useOsintDedupeClusterQuery(recordId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["osint", "records", recordId, "dedupe-cluster"],
+    queryFn: () => osintApi.dedupeCluster(recordId!),
+    enabled: Boolean(recordId) && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useOsintCreateSourceMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof osintApi.createSource>>, unknown, OsintSourceCreateBody>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: osintApi.createSource,
+    onSuccess: () => void invalidateMany(qc, [["osint", "sources", "list"]]),
+    ...opts,
+  });
+}
+
+export function useOsintUpdateSourceMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof osintApi.updateSource>>, unknown, { sourceId: string; body: OsintSourcePatchBody }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sourceId, body }) => osintApi.updateSource(sourceId, body),
+    onSuccess: () => void invalidateMany(qc, [["osint", "sources", "list"]]),
+    ...opts,
+  });
+}
+
+export function useOsintDeleteSourceMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof osintApi.deleteSource>>, unknown, string>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: osintApi.deleteSource,
+    onSuccess: () => void invalidateMany(qc, [["osint", "sources", "list"]]),
+    ...opts,
+  });
+}
+
+export function useOsintCollectSourceMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof osintApi.collectSource>>, unknown, { sourceId: string; body?: OsintCollectBody }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sourceId, body }) => osintApi.collectSource(sourceId, body ?? {}),
+    onSuccess: () => void invalidateMany(qc, [["osint", "records", "list"], ["osint", "sources", "list"]]),
+    ...opts,
+  });
+}
+
+export function useOsintCollectTargetedMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof osintApi.collectTargeted>>, unknown, OsintTargetedBody>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: osintApi.collectTargeted,
+    onSuccess: () => void invalidateMany(qc, [["osint", "records", "list"], ["osint", "sources", "list"]]),
+    ...opts,
+  });
+}
+
+export function useOsintSeedDefaultsMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof osintApi.seedDefaults>>, unknown, void>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => osintApi.seedDefaults(),
+    onSuccess: () => void invalidateMany(qc, [["osint", "sources", "list"]]),
+    ...opts,
+  });
+}
+
+export function useOsintPromoteMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof osintApi.promote>>, unknown, { recordId: string; body?: OsintPromoteBody }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ recordId, body }) => osintApi.promote(recordId, body ?? {}),
+    onSuccess: () => void invalidateMany(qc, [["osint", "records", "list"], ["intelligence", "reports"]]),
+    ...opts,
+  });
+}
+
+export function useOsintCreateClaimMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof osintApi.createClaim>>, unknown, { recordId: string; body: OsintClaimCreateBody }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ recordId, body }) => osintApi.createClaim(recordId, body),
+    onSuccess: () => void invalidateMany(qc, [["osint", "records", "list"]]),
+    ...opts,
+  });
+}
+
+export function useOsintReviewClaimMutation(
+  opts?: UseMutationOptions<Awaited<ReturnType<typeof osintApi.reviewClaim>>, unknown, { claimId: string; body: OsintClaimReviewBody }>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ claimId, body }) => osintApi.reviewClaim(claimId, body),
+    onSuccess: () => void invalidateMany(qc, [["osint", "records", "list"]]),
     ...opts,
   });
 }

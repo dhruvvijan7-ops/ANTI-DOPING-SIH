@@ -20,8 +20,12 @@ from app.models.investigations import Investigation
 from app.models.relationships import EntityRelationship
 from app.models.subjects import (
     Athlete,
+    Competition,
+    Event,
+    Location,
     Organization,
     Provider,
+    Source,
     Supplement,
     SupportPerson,
     Team,
@@ -35,6 +39,10 @@ ENTITY_MODELS: dict[str, type] = {
     "ORGANIZATION": Organization,
     "PROVIDER": Provider,
     "SUPPLEMENT": Supplement,
+    "EVENT": Event,
+    "COMPETITION": Competition,
+    "LOCATION": Location,
+    "SOURCE": Source,
 }
 
 

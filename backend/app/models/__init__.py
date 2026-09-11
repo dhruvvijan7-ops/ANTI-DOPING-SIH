@@ -22,6 +22,7 @@ from app.models.events import (
     WhereaboutsEvent,
 )
 from app.models.identity import Permission, Role, User, role_permissions
+from app.models.imports import DataImport, ImportRow
 from app.models.intelligence import (
     IntelligenceReport,
     IntelligenceSource,
@@ -62,8 +63,11 @@ __all__ = [
     "AnomalyResult",
     "Athlete",
     "CorrelationResult",
+    "DataImport",
     "FeatureSnapshot",
     "FeatureVersion",
+    "ImportRow",
+    "IntelligenceReport",
     "NetworkResult",
     "PriorityScore",
     "RuleResult",
